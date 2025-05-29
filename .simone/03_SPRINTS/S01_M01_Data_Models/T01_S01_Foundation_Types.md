@@ -28,7 +28,7 @@ Create a robust, type-safe foundation for the entire data model layer:
 
 ## Subtasks
 - [x] Create Role enum (USER, ASSISTANT)
-- [x] Create MessageType enum (USER, ASSISTANT) 
+- [x] Create MessageType enum (USER, ASSISTANT)
 - [x] Create StopReason enum (END_TURN, MAX_TOKENS, STOP_SEQUENCE)
 - [x] Create UserType enum (EXTERNAL, INTERNAL)
 - [x] Define ClaudeSDKBaseModel with ConfigDict settings

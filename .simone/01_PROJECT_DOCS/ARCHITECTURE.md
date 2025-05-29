@@ -13,7 +13,7 @@ A simple Python library for parsing Claude Code session files (JSONL) and extrac
 ## Technical Stack
 
 ### Core Dependencies
-- **Python**: 3.11+ 
+- **Python**: 3.11+
 - **Pydantic**: 2.x (data validation, serialization)
 
 ### Development Tools
@@ -40,7 +40,7 @@ claude_sdk/
 def parse_session(file_path: Path) -> ParsedSession:
     """Parse a Claude Code JSONL file into structured data."""
 
-# Discovery helper  
+# Discovery helper
 def discover_sessions(claude_dir: Path = None) -> List[Path]:
     """Find all session files in ~/.claude/projects/"""
 ```
@@ -59,7 +59,7 @@ JSONL File → parse_session() → ParsedSession (messages, metadata, tools)
 - User messages, assistant responses, tool usage
 - Timestamps, costs, token counts
 
-### ParsedSession  
+### ParsedSession
 - Container for all session data
 - Conversation threading (parent_uuid relationships)
 - Aggregated metadata (total cost, tool usage counts)
@@ -98,7 +98,7 @@ JSONL File → parse_session() → ParsedSession (messages, metadata, tools)
 
 ### I/O Optimization
 - **Async File Operations**: aiofiles for large file processing
-- **Batch Processing**: Group operations to reduce syscall overhead  
+- **Batch Processing**: Group operations to reduce syscall overhead
 - **Connection Pooling**: Reuse subprocess connections where possible
 
 ### Caching Strategy
@@ -164,7 +164,7 @@ JSONL File → parse_session() → ParsedSession (messages, metadata, tools)
 ```python
 ClaudeSDKError (base)
 ├── ParseError (JSONL parsing failures)
-├── ExecutionError (subprocess failures) 
+├── ExecutionError (subprocess failures)
 ├── ValidationError (data validation failures)
 └── SessionError (session management failures)
 ```

@@ -42,7 +42,7 @@ Add analysis utilities and convenience functions to make the parsed session data
 def analyze_sessions(session_paths: List[Path]) -> BatchAnalysis
 def analyze_project(project_dir: Path) -> ProjectAnalysis
 
-# Export utilities  
+# Export utilities
 def export_to_json(session: ParsedSession, output_path: Path) -> None
 def export_tool_usage_csv(sessions: List[ParsedSession], output_path: Path) -> None
 

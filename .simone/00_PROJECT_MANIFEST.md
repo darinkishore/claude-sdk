@@ -36,13 +36,13 @@ This project follows a milestone-based development approach.
 - MessageRecord, ParsedSession, content blocks, enums
 - Full basedpyright compliance and type safety
 
-#### S02: JSONL Parser & Error Handling (📋 PLANNED)  
+#### S02: JSONL Parser & Error Handling (📋 PLANNED)
 - Raw JSONL parsing with robust error handling
 - Memory-efficient processing for large files
 - Session file discovery utilities
 
 #### S03: Session Reconstruction & Metadata Aggregation (📋 PLANNED)
-- Conversation threading via parent_uuid relationships  
+- Conversation threading via parent_uuid relationships
 - Session metadata calculation (costs, tokens, tool usage)
 - ParsedSession container with complete session data
 
@@ -55,7 +55,7 @@ This project follows a milestone-based development approach.
 **Goal**: Make the parsed data actually useful
 
 **What we add**:
-- Session discovery: `discover_sessions()`  
+- Session discovery: `discover_sessions()`
 - Tool usage analysis
 - Cost/token aggregation
 - Export utilities (JSON, CSV)

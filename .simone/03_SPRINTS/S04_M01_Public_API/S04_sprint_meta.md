@@ -15,7 +15,7 @@ Create clean public interface and finalize the library for production use
 
 ## Scope & Key Deliverables
 - parse_session(file_path: Path) -> ParsedSession function
-- discover_sessions(claude_dir: Path = None) -> List[Path] function  
+- discover_sessions(claude_dir: Path = None) -> List[Path] function
 - Clean __init__.py exports with clear public API
 - Comprehensive error handling with user-friendly messages
 - API documentation and usage examples

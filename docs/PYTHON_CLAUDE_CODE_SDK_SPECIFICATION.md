@@ -1,8 +1,8 @@
 # 🐍 Python Claude Code SDK: Technical Specification
 
-**Version**: 0.1.0-draft  
-**Status**: Design Phase  
-**Priority**: T0 - Observability Foundation  
+**Version**: 0.1.0-draft
+**Status**: Design Phase
+**Priority**: T0 - Observability Foundation
 
 ---
 
@@ -25,7 +25,7 @@ A composable, low-level Python library providing rich abstractions over Claude C
 ### **T0: Data Access Foundation** 🎯
 **Goal**: Rich data model, session parsing, data extraction
 - [ ] Claude Code JSONL format parsing with robust error handling
-- [ ] Message threading and conversation reconstruction  
+- [ ] Message threading and conversation reconstruction
 - [ ] Tool usage extraction and correlation
 - [ ] Performance metrics access (cost, timing, token usage)
 - [ ] Raw data structures with zero interpretation
@@ -62,7 +62,7 @@ A composable, low-level Python library providing rich abstractions over Claude C
 claude_sdk/
 ├── __init__.py              # Public API exports
 ├── models.py                # Pydantic data models
-├── parser.py                # JSONL parsing and session reconstruction  
+├── parser.py                # JSONL parsing and session reconstruction
 ├── executor.py              # Claude binary execution
 ├── errors.py                # Sealed error hierarchy
 ├── git.py                   # Git integration (T2)
@@ -102,7 +102,7 @@ from pydantic.types import PositiveInt, PositiveFloat
 class SessionConfig(BaseModel):
     """Configuration for Claude Code execution."""
     model_config = ConfigDict(frozen=True, extra='forbid')
-    
+
     model: str = "claude-sonnet-4"
     max_turns: Optional[PositiveInt] = None
     output_format: Literal["text", "json", "stream-json"] = "json"
@@ -112,7 +112,7 @@ class SessionConfig(BaseModel):
     append_system_prompt: Optional[str] = None
     mcp_config: Optional[Path] = None  # T3
     permission_prompt_tool: Optional[str] = None  # T3
-    
+
     @field_validator('output_format')
     @classmethod
     def validate_output_format(cls, v: str) -> str:
@@ -122,7 +122,7 @@ class SessionConfig(BaseModel):
 
 class ClaudeSession:
     """Represents a Claude Code session with configuration and state."""
-    
+
     def __init__(
         self,
         id: str,
@@ -183,7 +183,7 @@ class ToolUseBlock(ContentBlock):
 class TokenUsage(BaseModel):
     """Token usage statistics."""
     model_config = ConfigDict(frozen=True, extra='forbid')
-    
+
     input_tokens: int = Field(ge=0)
     cache_creation_input_tokens: int = Field(default=0, ge=0)
     cache_read_input_tokens: int = Field(default=0, ge=0)
@@ -193,7 +193,7 @@ class TokenUsage(BaseModel):
 class Message(BaseModel):
     """A single message in conversation."""
     model_config = ConfigDict(frozen=True, extra='forbid')
-    
+
     id: Optional[str] = None
     role: Role
     model: Optional[str] = None
@@ -204,7 +204,7 @@ class Message(BaseModel):
 class MessageRecord(BaseModel):
     """Complete message record from Claude Code JSONL."""
     model_config = ConfigDict(frozen=True, extra='forbid')
-    
+
     parent_uuid: Optional[UUID] = Field(default=None, alias="parentUuid")
     is_sidechain: bool = Field(alias="isSidechain")
     user_type: UserType = Field(alias="userType")
@@ -222,7 +222,7 @@ class MessageRecord(BaseModel):
 class ToolResult(BaseModel):
     """Result of tool execution."""
     model_config = ConfigDict(frozen=True, extra='forbid')
-    
+
     tool_use_id: str
     content: str
     stdout: Optional[str] = None
@@ -235,7 +235,7 @@ class ToolResult(BaseModel):
 class SummaryRecord(BaseModel):
     """Summary record for compacted conversation."""
     model_config = ConfigDict(frozen=True, extra='forbid')
-    
+
     type: Literal["summary"] = "summary"
     summary: str
     leaf_uuid: UUID = Field(alias="leafUuid")
@@ -286,27 +286,27 @@ class ClaudeSessionBuilder:
     def __init__(self, directory: Union[str, Path]):
         self.directory = Path(directory)
         self.config = SessionConfig()
-    
+
     def with_model(self, model: str) -> 'ClaudeSessionBuilder':
         self.config.model = model
         return self
-    
+
     def with_max_turns(self, turns: int) -> 'ClaudeSessionBuilder':
         self.config.max_turns = turns
         return self
-    
+
     def with_system_prompt(self, prompt: str) -> 'ClaudeSessionBuilder':
         self.config.system_prompt = prompt
         return self
-    
+
     def with_git_tracking(self) -> 'ClaudeSessionBuilder':  # T2
         # Implementation TBD
         return self
-    
+
     def with_mcp_config(self, config: Path) -> 'ClaudeSessionBuilder':  # T3
         self.config.mcp_config = config
         return self
-    
+
     async def build(self) -> ClaudeSession:
         session_id = generate_session_id()
         return ClaudeSession(
@@ -325,16 +325,16 @@ from typing import AsyncIterator
 class TraceStream:
     def __init__(self, session_file: Optional[Path] = None):
         self.session_file = session_file
-    
+
     async def record(self, record: MessageRecord) -> None:
         if self.session_file:
             async with aiofiles.open(self.session_file, 'a') as f:
                 await f.write(record.model_dump_json() + '\n')
-    
+
     async def stream_records(self) -> AsyncIterator[MessageRecord]:
         if not self.session_file or not self.session_file.exists():
             return
-        
+
         async with aiofiles.open(self.session_file, 'r') as f:
             async for line in f:
                 if line.strip():
@@ -379,18 +379,18 @@ class ParsedSession:
 class SessionParser:
     def __init__(self, file_path: Union[str, Path]):
         self.file_path = Path(file_path)
-    
+
     async def parse(self) -> ParsedSession:
         session = ParsedSession()
-        
+
         async with aiofiles.open(self.file_path, 'r') as f:
             async for line in f:
                 if not line.strip():
                     continue
-                
+
                 try:
                     data = json.loads(line)
-                    
+
                     if data.get('type') == 'summary':
                         summary = SummaryRecord.model_validate(data)
                         session.summaries.append(summary)
@@ -402,11 +402,11 @@ class SessionParser:
                 except (json.JSONDecodeError, ValidationError) as e:
                     # Log error but continue processing
                     continue
-        
+
         session.conversation_tree = self._build_conversation_tree(session.messages)
         session.metadata = self._calculate_metadata(session.messages)
         return session
-    
+
     async def stream_records(self) -> AsyncIterator[MessageRecord]:
         async with aiofiles.open(self.file_path, 'r') as f:
             async for line in f:
@@ -417,13 +417,13 @@ class SessionParser:
                             yield MessageRecord.model_validate(data)
                     except (json.JSONDecodeError, ValidationError):
                         continue
-    
+
     async def get_conversation_tree(self) -> ConversationTree:
         messages = []
         async for message in self.stream_records():
             messages.append(message)
         return self._build_conversation_tree(messages)
-    
+
     async def extract_tool_usage(self) -> List[ToolExecution]:
         tool_executions = []
         async for message in self.stream_records():
@@ -439,46 +439,46 @@ class SessionParser:
                         )
                         tool_executions.append(tool_exec)
         return tool_executions
-    
+
     def _build_conversation_tree(self, messages: List[MessageRecord]) -> ConversationTree:
         # Implementation for building conversation tree from parent_uuid relationships
         tree = ConversationTree()
         nodes_by_uuid = {}
-        
+
         for message in messages:
             node = ConversationNode(message)
             nodes_by_uuid[message.uuid] = node
-            
+
             if message.parent_uuid is None:
                 tree.root_messages.append(node)
             elif message.parent_uuid in nodes_by_uuid:
                 parent_node = nodes_by_uuid[message.parent_uuid]
                 parent_node.children.append(node)
-        
+
         return tree
-    
+
     def _calculate_metadata(self, messages: List[MessageRecord]) -> SessionMetadata:
         metadata = SessionMetadata()
         metadata.total_messages = len(messages)
-        
+
         for message in messages:
             if message.cost_usd:
                 metadata.total_cost += message.cost_usd
-        
+
         return metadata
-    
+
     @staticmethod
     async def discover_sessions(claude_dir: Path) -> List[Path]:
         """Discover all session JSONL files in ~/.claude/projects/"""
         sessions = []
         projects_dir = claude_dir / "projects"
-        
+
         if projects_dir.exists():
             for project_dir in projects_dir.iterdir():
                 if project_dir.is_dir():
                     for file in project_dir.glob("*.jsonl"):
                         sessions.append(file)
-        
+
         return sessions
 ```
 
@@ -496,24 +496,24 @@ from .errors import ExecutionError, ClaudeErrorCode
 
 class ClaudeExecutor:
     """Synchronous executor for Claude Code binary."""
-    
+
     def __init__(self, claude_binary: Union[str, Path] = "claude") -> None:
         self.claude_binary = self._resolve_binary(claude_binary)
         self.config = SessionConfig()
         self.timeout_seconds = 300  # 5 minutes default
-    
+
     def with_config(self, config: SessionConfig) -> 'ClaudeExecutor':
         """Set execution configuration."""
         self.config = config
         return self
-    
+
     def with_timeout(self, seconds: int) -> 'ClaudeExecutor':
         """Set execution timeout."""
         if seconds <= 0:
             raise ValueError("Timeout must be positive")
         self.timeout_seconds = seconds
         return self
-    
+
     def execute_prompt(
         self,
         prompt: str,
@@ -526,9 +526,9 @@ class ClaudeExecutor:
                 "Prompt cannot be empty",
                 error_code=ClaudeErrorCode.INVALID_COMMAND
             )
-        
+
         cmd = self._build_command(prompt, session_id)
-        
+
         try:
             result = subprocess.run(
                 cmd,
@@ -538,7 +538,7 @@ class ClaudeExecutor:
                 timeout=self.timeout_seconds,
                 check=False  # We handle return codes manually
             )
-            
+
             if result.returncode != 0:
                 raise ExecutionError(
                     f"Claude execution failed with exit code {result.returncode}",
@@ -546,7 +546,7 @@ class ClaudeExecutor:
                     stderr=result.stderr,
                     command=cmd
                 )
-            
+
             # Parse JSON output if format is json
             if self.config.output_format == "json":
                 try:
@@ -568,7 +568,7 @@ class ClaudeExecutor:
                     result=result.stdout,
                     session_id=session_id or "unknown"
                 )
-                
+
         except subprocess.TimeoutExpired:
             raise ExecutionError(
                 f"Claude execution timed out after {self.timeout_seconds} seconds",
@@ -581,21 +581,21 @@ class ClaudeExecutor:
                 error_code=ClaudeErrorCode.CLAUDE_NOT_FOUND,
                 context={"binary_path": str(self.claude_binary)}
             )
-    
+
     def resume_session(self, session_id: str, working_directory: Optional[Path] = None) -> ClaudeOutput:
         """Resume an existing session."""
         cmd = [str(self.claude_binary), "--session", session_id, "--continue"]
         cmd.extend(self._get_config_args())
-        
+
         return self._execute_command(cmd, working_directory)
-    
+
     def continue_latest_session(self, working_directory: Optional[Path] = None) -> ClaudeOutput:
         """Continue the latest session."""
         cmd = [str(self.claude_binary), "--continue-latest"]
         cmd.extend(self._get_config_args())
-        
+
         return self._execute_command(cmd, working_directory)
-    
+
     def _resolve_binary(self, claude_binary: Union[str, Path]) -> Path:
         """Resolve Claude binary path."""
         if isinstance(claude_binary, Path):
@@ -606,53 +606,53 @@ class ClaudeExecutor:
             found = shutil.which(claude_binary)
             if found:
                 return Path(found)
-        
+
         raise ExecutionError(
             f"Claude binary not found: {claude_binary}",
             error_code=ClaudeErrorCode.CLAUDE_NOT_FOUND,
             context={"binary_path": str(claude_binary)}
         )
-    
+
     def _build_command(self, prompt: str, session_id: Optional[str] = None) -> List[str]:
         """Build command line arguments."""
         cmd = [str(self.claude_binary)]
-        
+
         if session_id:
             cmd.extend(["--session", session_id])
-        
+
         cmd.extend([
             "--output-format", self.config.output_format,
             "--model", self.config.model,
             "--prompt", prompt
         ])
-        
+
         cmd.extend(self._get_config_args())
         return cmd
-    
+
     def _get_config_args(self) -> List[str]:
         """Get configuration arguments."""
         args = []
-        
+
         if self.config.max_turns:
             args.extend(["--max-turns", str(self.config.max_turns)])
-        
+
         if self.config.system_prompt:
             args.extend(["--system-prompt", self.config.system_prompt])
-        
+
         if self.config.append_system_prompt:
             args.extend(["--append-system-prompt", self.config.append_system_prompt])
-        
+
         for tool in self.config.allowed_tools:
             args.extend(["--allowed-tool", tool])
-        
+
         for tool in self.config.disallowed_tools:
             args.extend(["--disallowed-tool", tool])
-        
+
         if self.config.mcp_config:
             args.extend(["--mcp-config", str(self.config.mcp_config)])
-        
+
         return args
-    
+
     def _execute_command(self, cmd: List[str], working_directory: Optional[Path]) -> ClaudeOutput:
         """Execute a command and return parsed output."""
         # Similar implementation to execute_prompt but for pre-built commands
@@ -783,13 +783,13 @@ from pathlib import Path
 def main() -> None:
     # Parse existing session
     session = parse_session("~/.claude/projects/my-project/session.jsonl")
-    
+
     print(f"Session: {session.session_id}")
     print(f"Total messages: {len(session.messages)}")
     print(f"Total cost: ${session.metadata.total_cost:.4f}")
     print(f"Input tokens: {session.metadata.total_input_tokens}")
     print(f"Output tokens: {session.metadata.total_output_tokens}")
-    
+
     # Tool usage analysis
     print("\nTool usage:")
     for tool_name, count in session.metadata.tool_usage_count.items():
@@ -811,19 +811,19 @@ def main() -> None:
         max_turns=10,
         output_format="json"
     )
-    
+
     executor = ClaudeExecutor().with_config(config).with_timeout(120)
-    
+
     try:
         result = executor.execute_prompt(
             "Analyze the code in this directory and suggest improvements",
             working_directory=Path("/path/to/project")
         )
-        
+
         print(f"Cost: ${result.cost_usd:.4f}")
         print(f"Duration: {result.duration_ms}ms")
         print(f"Result: {result.result[:200]}...")
-        
+
     except ExecutionError as e:
         print(f"Execution failed: {e}")
         print(f"Error code: {e.error_code}")
@@ -844,37 +844,37 @@ def analyze_all_sessions() -> None:
     """Analyze all Claude sessions for usage patterns."""
     claude_dir = Path.home() / ".claude"
     session_paths = discover_sessions(claude_dir)
-    
+
     total_cost = 0.0
     total_messages = 0
     total_sessions = 0
     tool_usage: Dict[str, int] = {}
-    
+
     print(f"Found {len(session_paths)} session files")
-    
+
     for session_path in session_paths:
         try:
             parser = SessionParser(session_path)
             session = parser.parse()
-            
+
             total_cost += session.metadata.total_cost
             total_messages += len(session.messages)
             total_sessions += 1
-            
+
             # Aggregate tool usage
             for tool, count in session.metadata.tool_usage_count.items():
                 tool_usage[tool] = tool_usage.get(tool, 0) + count
-                
+
         except ParseError as e:
             print(f"Failed to parse {session_path}: {e}")
             continue
-    
+
     print(f"\n=== Summary ===")
     print(f"Total sessions: {total_sessions}")
     print(f"Total cost: ${total_cost:.2f}")
     print(f"Total messages: {total_messages}")
     print(f"Average cost per session: ${total_cost/total_sessions:.4f}")
-    
+
     print(f"\n=== Most Used Tools ===")
     sorted_tools = sorted(tool_usage.items(), key=lambda x: x[1], reverse=True)
     for tool, count in sorted_tools[:10]:
@@ -893,9 +893,9 @@ def extract_dspy_traces(session_path: str) -> List[Dict[str, Any]]:
     """Extract DSPy-compatible traces from Claude session."""
     parser = SessionParser(session_path)
     session = parser.parse()
-    
+
     traces = []
-    
+
     for message in session.messages:
         # Convert to DSPy trace format
         trace = {
@@ -908,18 +908,18 @@ def extract_dspy_traces(session_path: str) -> List[Dict[str, Any]]:
             "uuid": str(message.uuid),
             "parent_uuid": str(message.parent_uuid) if message.parent_uuid else None,
         }
-        
+
         if message.message.usage:
             trace["token_usage"] = message.message.usage.model_dump()
-        
+
         traces.append(trace)
-    
+
     return traces
 
 def main() -> None:
     traces = extract_dspy_traces("~/.claude/projects/my-project/session.jsonl")
     print(f"Extracted {len(traces)} traces for DSPy analysis")
-    
+
     # TODO: Feed into DSPy SIMBA optimizer
     # optimizer = dspy.SIMBA(traces=traces)
     # optimized_strategy = optimizer.optimize()
@@ -958,13 +958,13 @@ dependencies = [
 [project.optional-dependencies]
 # T2: Git integration
 git = ["GitPython>=3.1.0"]
-# T3: MCP support  
+# T3: MCP support
 mcp = ["mcp-sdk>=0.1.0"]
 # Development dependencies
 dev = [
     "mypy>=1.8.0",
     "ruff>=0.1.0",
-    "pytest>=7.0.0", 
+    "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "hypothesis>=6.0.0",
     "types-python-dateutil",
@@ -984,7 +984,7 @@ build-backend = "hatchling.build"
 [tool.uv]
 dev-dependencies = [
     "mypy>=1.8.0",
-    "ruff>=0.1.0", 
+    "ruff>=0.1.0",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "hypothesis>=6.0.0",
@@ -1014,7 +1014,7 @@ line-length = 100
 [tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings  
+    "W",  # pycodestyle warnings
     "F",  # pyflakes
     "I",  # isort
     "B",  # flake8-bugbear
@@ -1055,7 +1055,7 @@ branch = true
 [tool.coverage.report]
 exclude_lines = [
     "pragma: no cover",
-    "def __repr__", 
+    "def __repr__",
     "if self.debug:",
     "if settings.DEBUG",
     "raise AssertionError",
@@ -1075,7 +1075,7 @@ skip_covered = true
 
 ### **T0 Success Metrics**
 - [ ] Parse any Claude Code JSONL session file without errors
-- [ ] Reconstruct conversation threading perfectly  
+- [ ] Reconstruct conversation threading perfectly
 - [ ] Extract tool usage patterns with 100% accuracy
 - [ ] Handle large session files (>1MB) efficiently
 - [ ] Type safety with mypy --strict (zero Any types in public API)

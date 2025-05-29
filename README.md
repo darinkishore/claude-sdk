@@ -23,7 +23,7 @@ This project is in active development. The core data models and parsing infrastr
 
 ### T0: Data Access Foundation (Current)
 - [ ] Claude Code JSONL format parsing with robust error handling
-- [ ] Message threading and conversation reconstruction  
+- [ ] Message threading and conversation reconstruction
 - [ ] Tool usage extraction and correlation
 - [ ] Performance metrics access (cost, timing, token usage)
 - [ ] Raw data structures with zero interpretation
@@ -70,7 +70,7 @@ just test
 claude_sdk/
 ├── __init__.py              # Public API exports
 ├── models.py                # Pydantic data models
-├── parser.py                # JSONL parsing and session reconstruction  
+├── parser.py                # JSONL parsing and session reconstruction
 ├── executor.py              # Claude binary execution
 ├── errors.py                # Sealed error hierarchy
 ├── utils.py                 # Common utilities
@@ -82,7 +82,7 @@ claude_sdk/
 This project uses modern Python tooling:
 
 - **uv** for fast dependency management
-- **basedpyright** for strict type checking  
+- **basedpyright** for strict type checking
 - **ruff** for formatting and linting
 - **pytest** for testing
 - **pre-commit** for git hooks
@@ -94,7 +94,7 @@ This project uses modern Python tooling:
 ```bash
 just check          # Run all checks (format, lint, type check, test)
 just fmt             # Format code with ruff
-just lint            # Lint code with ruff  
+just lint            # Lint code with ruff
 just typecheck       # Type check with basedpyright
 just test            # Run tests
 just test-cov        # Run tests with coverage

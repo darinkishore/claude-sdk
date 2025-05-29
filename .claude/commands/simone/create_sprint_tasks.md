@@ -116,7 +116,7 @@ Update the sprint meta file:
 **Final Report:**
 
 ```
-✅ **Sprint Detailed**: S## 
+✅ **Sprint Detailed**: S##
 📋 **Tasks Created**: [Number] tasks (T01_S##, T02_S##, ...)
 🎯 **Deliverables Covered**: [List key deliverables]
 📚 **ADRs Integrated**: [List relevant ADRs if any]
