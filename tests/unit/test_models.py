@@ -9,17 +9,21 @@ import pytest
 from claude_sdk.models import (
     ClaudeSDKBaseModel,
     ContentBlock,
+    ConversationTree,
     DateTimeType,
     Message,
     MessageContentType,
     MessageRecord,
     MessageType,
+    ParsedSession,
     PathType,
     Role,
+    SessionMetadata,
     StopReason,
     TextBlock,
     ThinkingBlock,
     TokenUsage,
+    ToolExecution,
     ToolResult,
     ToolResultBlock,
     ToolUseBlock,
@@ -586,6 +590,10 @@ class TestFoundationTypesExports:
             "ToolResult",
             "Message",
             "MessageRecord",
+            "SessionMetadata",
+            "ToolExecution",
+            "ConversationTree",
+            "ParsedSession",
         }
 
         assert set(__all__) == expected_exports
@@ -863,3 +871,438 @@ class TestMessageRecord:
         assert record.cost_usd == 0.02
         assert record.duration_ms == 800
         assert record.is_meta is False
+
+
+class TestSessionMetadata:
+    """Test SessionMetadata model."""
+
+    def test_session_metadata_creation(self):
+        """Test SessionMetadata with default values."""
+        metadata = SessionMetadata()
+        assert metadata.total_cost == 0.0
+        assert metadata.total_messages == 0
+        assert metadata.tool_usage_count == {}
+
+    def test_session_metadata_with_data(self):
+        """Test SessionMetadata with aggregated data."""
+        tool_counts = {"bash": 5, "edit": 3, "read": 10}
+        metadata = SessionMetadata(
+            total_cost=15.75, total_messages=25, tool_usage_count=tool_counts
+        )
+        assert metadata.total_cost == 15.75
+        assert metadata.total_messages == 25
+        assert metadata.tool_usage_count == tool_counts
+
+    def test_session_metadata_immutable(self):
+        """Test SessionMetadata is immutable."""
+        from pydantic import ValidationError
+
+        metadata = SessionMetadata(total_cost=5.0)
+        with pytest.raises(ValidationError):
+            metadata.total_cost = 10.0
+
+    def test_session_metadata_negative_cost_validation(self):
+        """Test SessionMetadata rejects negative total_cost."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc_info:
+            SessionMetadata(total_cost=-1.0)
+        assert "greater than or equal to 0" in str(exc_info.value)
+
+    def test_session_metadata_negative_messages_validation(self):
+        """Test SessionMetadata rejects negative total_messages."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc_info:
+            SessionMetadata(total_messages=-1)
+        assert "greater than or equal to 0" in str(exc_info.value)
+
+    def test_session_metadata_boundary_values(self):
+        """Test SessionMetadata with boundary values."""
+        # Test zero values (should be valid)
+        metadata = SessionMetadata(total_cost=0.0, total_messages=0, tool_usage_count={})
+        assert metadata.total_cost == 0.0
+        assert metadata.total_messages == 0
+        assert metadata.tool_usage_count == {}
+
+
+class TestToolExecution:
+    """Test ToolExecution model."""
+
+    def test_tool_execution_creation(self):
+        """Test ToolExecution with all required fields."""
+        from datetime import datetime, timedelta
+
+        tool_result = ToolResult(tool_use_id="tool_123", content="success")
+        execution = ToolExecution(
+            tool_name="bash",
+            input={"command": "ls -la"},
+            output=tool_result,
+            duration=timedelta(seconds=2.5),
+            timestamp=datetime.now(),
+        )
+        assert execution.tool_name == "bash"
+        assert execution.input["command"] == "ls -la"
+        assert execution.output == tool_result
+        assert execution.duration.total_seconds() == 2.5
+
+    def test_tool_execution_immutable(self):
+        """Test ToolExecution is immutable."""
+        from datetime import datetime, timedelta
+
+        from pydantic import ValidationError
+
+        tool_result = ToolResult(tool_use_id="tool_123", content="success")
+        execution = ToolExecution(
+            tool_name="bash",
+            input={},
+            output=tool_result,
+            duration=timedelta(seconds=1),
+            timestamp=datetime.now(),
+        )
+        with pytest.raises(ValidationError):
+            execution.tool_name = "edit"
+
+    def test_tool_execution_empty_input(self):
+        """Test ToolExecution with empty input dictionary."""
+        from datetime import datetime, timedelta
+
+        tool_result = ToolResult(tool_use_id="tool_123", content="success")
+        execution = ToolExecution(
+            tool_name="test_tool",
+            input={},  # Empty input
+            output=tool_result,
+            duration=timedelta(seconds=1),
+            timestamp=datetime.now(),
+        )
+        assert execution.input == {}
+        assert execution.tool_name == "test_tool"
+
+    def test_tool_execution_complex_input(self):
+        """Test ToolExecution with complex nested input."""
+        from datetime import datetime, timedelta
+
+        complex_input = {
+            "command": "find /path -name '*.py'",
+            "options": {"recursive": True, "max_depth": 5, "patterns": ["*.py", "*.js"]},
+            "metadata": {"user": "test", "priority": 1},
+        }
+
+        tool_result = ToolResult(tool_use_id="tool_456", content="found files")
+        execution = ToolExecution(
+            tool_name="file_search",
+            input=complex_input,
+            output=tool_result,
+            duration=timedelta(milliseconds=500),
+            timestamp=datetime.now(),
+        )
+        assert execution.input["command"] == "find /path -name '*.py'"
+        assert execution.input["options"]["recursive"] is True
+        assert execution.input["metadata"]["priority"] == 1
+
+    def test_tool_execution_required_fields(self):
+        """Test ToolExecution with all required fields."""
+        from pydantic import ValidationError
+
+        # Test missing required fields raise validation errors
+        with pytest.raises(ValidationError):
+            ToolExecution()  # No fields provided
+
+        with pytest.raises(ValidationError):
+            ToolExecution(tool_name="test")  # Missing other required fields
+
+
+class TestConversationTree:
+    """Test ConversationTree placeholder model."""
+
+    def test_conversation_tree_creation(self):
+        """Test ConversationTree creation (placeholder)."""
+        tree = ConversationTree()
+        assert tree is not None
+
+    def test_conversation_tree_immutable(self):
+        """Test ConversationTree is immutable."""
+
+        tree = ConversationTree()
+        # Since it's a placeholder with no fields, test base model behavior
+        assert isinstance(tree, ClaudeSDKBaseModel)
+
+
+class TestParsedSession:
+    """Test ParsedSession model."""
+
+    def test_parsed_session_creation(self):
+        """Test ParsedSession with default values."""
+        session = ParsedSession(session_id="session_123")
+        assert session.session_id == "session_123"
+        assert session.messages == []
+        assert session.summaries == []
+        assert isinstance(session.conversation_tree, ConversationTree)
+        assert isinstance(session.metadata, SessionMetadata)
+
+    def test_parsed_session_with_messages(self):
+        """Test ParsedSession with message list."""
+        from datetime import datetime
+        from uuid import uuid4
+
+        # Create test messages
+        message1 = Message(role=Role.USER, content=[TextBlock(text="Hello")])
+        record1 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_123",
+            version="1.0.0",
+            type=MessageType.USER,
+            message=message1,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+            costUSD=0.01,
+        )
+
+        session = ParsedSession(session_id="session_123", messages=[record1])
+        assert len(session.messages) == 1
+        assert session.messages[0] == record1
+
+    def test_validate_session_integrity_valid(self):
+        """Test session integrity validation with valid data."""
+        from datetime import datetime
+        from uuid import uuid4
+
+        # Create messages with same session_id
+        message1 = Message(role=Role.USER, content=[TextBlock(text="Hello")])
+        record1 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_123",
+            version="1.0.0",
+            type=MessageType.USER,
+            message=message1,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+        )
+
+        metadata = SessionMetadata(total_messages=1)
+        session = ParsedSession(session_id="session_123", messages=[record1], metadata=metadata)
+
+        assert session.validate_session_integrity() is True
+
+    def test_validate_session_integrity_invalid_session_id(self):
+        """Test session integrity validation with mismatched session IDs."""
+        from datetime import datetime
+        from uuid import uuid4
+
+        message1 = Message(role=Role.USER, content=[TextBlock(text="Hello")])
+        record1 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_123",  # Different from ParsedSession session_id
+            version="1.0.0",
+            type=MessageType.USER,
+            message=message1,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+        )
+
+        session = ParsedSession(
+            session_id="session_456",  # Different session_id
+            messages=[record1],
+        )
+
+        assert session.validate_session_integrity() is False
+
+    def test_validate_session_integrity_invalid_message_count(self):
+        """Test session integrity validation with wrong message count."""
+        from datetime import datetime
+        from uuid import uuid4
+
+        message1 = Message(role=Role.USER, content=[TextBlock(text="Hello")])
+        record1 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_123",
+            version="1.0.0",
+            type=MessageType.USER,
+            message=message1,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+        )
+
+        # Wrong message count in metadata
+        metadata = SessionMetadata(total_messages=5)  # Should be 1
+        session = ParsedSession(session_id="session_123", messages=[record1], metadata=metadata)
+
+        assert session.validate_session_integrity() is False
+
+    def test_calculate_metadata(self):
+        """Test metadata calculation from messages."""
+        from datetime import datetime
+        from uuid import uuid4
+
+        # Create messages with costs and tool usage
+        tool_block = ToolUseBlock(id="tool_1", name="bash", input={"command": "ls"})
+        message1 = Message(role=Role.USER, content=[TextBlock(text="Hello")])
+        message2 = Message(role=Role.ASSISTANT, content=[tool_block])
+
+        record1 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_123",
+            version="1.0.0",
+            type=MessageType.USER,
+            message=message1,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+            costUSD=0.01,
+        )
+
+        record2 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_123",
+            version="1.0.0",
+            type=MessageType.ASSISTANT,
+            message=message2,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+            costUSD=0.05,
+        )
+
+        session = ParsedSession(session_id="session_123", messages=[record1, record2])
+
+        calculated_metadata = session.calculate_metadata()
+        assert abs(calculated_metadata.total_cost - 0.06) < 1e-10  # Handle floating point precision
+        assert calculated_metadata.total_messages == 2
+        assert calculated_metadata.tool_usage_count["bash"] == 1
+
+    def test_parsed_session_immutable(self):
+        """Test ParsedSession is immutable."""
+        from pydantic import ValidationError
+
+        session = ParsedSession(session_id="test")
+        with pytest.raises(ValidationError):
+            session.session_id = "modified"
+
+    def test_validate_session_integrity_empty_messages(self):
+        """Test session integrity validation with empty message list."""
+        session = ParsedSession(
+            session_id="session_123",
+            messages=[],  # Empty message list
+            metadata=SessionMetadata(total_messages=0),
+        )
+
+        # Should pass with empty messages if metadata is consistent
+        assert session.validate_session_integrity() is True
+
+    def test_calculate_metadata_with_none_costs(self):
+        """Test metadata calculation when cost_usd is None."""
+        from datetime import datetime
+        from uuid import uuid4
+
+        # Create messages with None cost
+        message1 = Message(role=Role.USER, content=[TextBlock(text="Hello")])
+        record1 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_123",
+            version="1.0.0",
+            type=MessageType.USER,
+            message=message1,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+            # costUSD not provided (None)
+        )
+
+        session = ParsedSession(session_id="session_123", messages=[record1])
+
+        calculated_metadata = session.calculate_metadata()
+        assert calculated_metadata.total_cost == 0.0
+        assert calculated_metadata.total_messages == 1
+        assert calculated_metadata.tool_usage_count == {}
+
+    def test_calculate_metadata_no_tool_usage(self):
+        """Test metadata calculation with no tool blocks."""
+        from datetime import datetime
+        from uuid import uuid4
+
+        # Create messages with only text content (no tools)
+        message1 = Message(role=Role.USER, content=[TextBlock(text="Hello")])
+        message2 = Message(role=Role.ASSISTANT, content=[TextBlock(text="Hi there!")])
+
+        record1 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_123",
+            version="1.0.0",
+            type=MessageType.USER,
+            message=message1,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+            costUSD=0.01,
+        )
+
+        record2 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_123",
+            version="1.0.0",
+            type=MessageType.ASSISTANT,
+            message=message2,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+            costUSD=0.02,
+        )
+
+        session = ParsedSession(session_id="session_123", messages=[record1, record2])
+
+        calculated_metadata = session.calculate_metadata()
+        assert abs(calculated_metadata.total_cost - 0.03) < 1e-10
+        assert calculated_metadata.total_messages == 2
+        assert calculated_metadata.tool_usage_count == {}  # No tools used
+
+    def test_validate_session_integrity_inconsistent_message_session_ids(self):
+        """Test session integrity validation when messages have inconsistent session IDs."""
+        from datetime import datetime
+        from uuid import uuid4
+
+        # Create messages with different session_ids
+        message1 = Message(role=Role.USER, content=[TextBlock(text="Hello")])
+        record1 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_123",
+            version="1.0.0",
+            type=MessageType.USER,
+            message=message1,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+        )
+
+        record2 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_456",  # Different session ID
+            version="1.0.0",
+            type=MessageType.USER,
+            message=message1,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+        )
+
+        session = ParsedSession(
+            session_id="session_123",
+            messages=[record1, record2],  # Mixed session IDs in messages
+        )
+
+        # Should fail validation due to inconsistent session IDs between messages
+        assert session.validate_session_integrity() is False

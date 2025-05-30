@@ -4,7 +4,7 @@ This module provides the foundational type system for parsing Claude Code JSONL 
 All models are immutable (frozen=True) and use strict validation (extra='forbid').
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
@@ -196,6 +196,108 @@ class MessageRecord(ClaudeSDKBaseModel):
     is_meta: bool | None = Field(default=None, alias="isMeta")
 
 
+class SessionMetadata(ClaudeSDKBaseModel):
+    """Session metadata with aggregated cost, token, and tool usage information.
+
+    Aggregates data from all MessageRecords in a session to provide
+    session-level analytics and cost tracking.
+    """
+
+    total_cost: float = Field(default=0.0, ge=0.0, description="Total USD cost for the session")
+    total_messages: int = Field(default=0, ge=0, description="Count of all messages in the session")
+    tool_usage_count: dict[str, int] = Field(
+        default_factory=dict, description="Tool name to usage count mapping"
+    )
+
+
+class ToolExecution(ClaudeSDKBaseModel):
+    """Tool execution record with timing and result information.
+
+    Represents a single tool execution extracted from tool blocks,
+    including input parameters, output results, and performance metrics.
+    """
+
+    tool_name: str = Field(description="Name of the executed tool")
+    input: dict[str, Any] = Field(description="Tool input parameters")
+    output: ToolResult = Field(description="Tool execution output/result")
+    duration: timedelta = Field(description="Execution duration")
+    timestamp: datetime = Field(description="When the tool was executed")
+
+
+class ConversationTree(ClaudeSDKBaseModel):
+    """Placeholder for future conversation threading implementation.
+
+    Will contain conversation tree structure based on parent_uuid relationships
+    for conversation threading support (planned for S03).
+    """
+
+    # Placeholder fields for future implementation
+    pass
+
+
+class ParsedSession(ClaudeSDKBaseModel):
+    """Main session container with messages, metadata, and session information.
+
+    Primary interface for complete session data, aggregating all parsed
+    MessageRecords with session-level metadata and analytics.
+    """
+
+    session_id: str = Field(description="Unique session identifier")
+    messages: list[MessageRecord] = Field(
+        default_factory=list, description="All parsed messages in the session"
+    )
+    summaries: list[str] = Field(default_factory=list, description="Summary records if present")
+    conversation_tree: ConversationTree = Field(
+        default_factory=ConversationTree,
+        description="Conversation tree structure (future threading support)",
+    )
+    metadata: SessionMetadata = Field(
+        default_factory=SessionMetadata, description="Aggregated session statistics"
+    )
+
+    def validate_session_integrity(self) -> bool:
+        """Validate session data integrity.
+
+        Returns:
+            bool: True if session data is valid, False otherwise
+        """
+        # Check if session_id is consistent across all messages
+        if self.messages:
+            expected_session_id = self.messages[0].session_id
+            for message in self.messages:
+                if message.session_id != expected_session_id:
+                    return False
+
+        # Check if metadata aggregations match actual message data
+        expected_message_count = len(self.messages)
+        return self.metadata.total_messages == expected_message_count
+
+    def calculate_metadata(self) -> SessionMetadata:
+        """Calculate session metadata from current messages.
+
+        Returns:
+            SessionMetadata: Calculated metadata based on current messages
+        """
+        total_cost = 0.0
+        total_messages = len(self.messages)
+        tool_usage_count: dict[str, int] = {}
+
+        for message in self.messages:
+            # Aggregate costs
+            if message.cost_usd:
+                total_cost += message.cost_usd
+
+            # Count tool usage
+            for content_block in message.message.content:
+                if isinstance(content_block, ToolUseBlock):
+                    tool_name = content_block.name
+                    tool_usage_count[tool_name] = tool_usage_count.get(tool_name, 0) + 1
+
+        return SessionMetadata(
+            total_cost=total_cost, total_messages=total_messages, tool_usage_count=tool_usage_count
+        )
+
+
 # Base type alias for content blocks (for isinstance checks)
 ContentBlock = TextBlock | ThinkingBlock | ToolUseBlock | ToolResultBlock
 
@@ -211,18 +313,22 @@ MessageContentType = TextBlock | ThinkingBlock | ToolUseBlock | ToolResultBlock
 __all__ = [
     "ClaudeSDKBaseModel",
     "ContentBlock",
+    "ConversationTree",
     "DateTimeType",
     "Message",
     "MessageContentBlock",
     "MessageContentType",
     "MessageRecord",
     "MessageType",
+    "ParsedSession",
     "PathType",
     "Role",
+    "SessionMetadata",
     "StopReason",
     "TextBlock",
     "ThinkingBlock",
     "TokenUsage",
+    "ToolExecution",
     "ToolResult",
     "ToolResultBlock",
     "ToolUseBlock",
