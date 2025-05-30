@@ -205,8 +205,38 @@ class SessionMetadata(ClaudeSDKBaseModel):
 
     total_cost: float = Field(default=0.0, ge=0.0, description="Total USD cost for the session")
     total_messages: int = Field(default=0, ge=0, description="Count of all messages in the session")
+    user_messages: int = Field(default=0, ge=0, description="Count of user messages")
+    assistant_messages: int = Field(default=0, ge=0, description="Count of assistant messages")
+
+    # Token usage aggregations
+    total_input_tokens: int = Field(
+        default=0, ge=0, description="Total input tokens across all messages"
+    )
+    total_output_tokens: int = Field(
+        default=0, ge=0, description="Total output tokens across all messages"
+    )
+    cache_creation_tokens: int = Field(default=0, ge=0, description="Total cache creation tokens")
+    cache_read_tokens: int = Field(default=0, ge=0, description="Total cache read tokens")
+
+    # Tool usage tracking
     tool_usage_count: dict[str, int] = Field(
         default_factory=dict, description="Tool name to usage count mapping"
+    )
+    total_tool_executions: int = Field(
+        default=0, ge=0, description="Total number of tool executions"
+    )
+
+    # Session timing
+    session_start: datetime | None = Field(default=None, description="Timestamp of first message")
+    session_end: datetime | None = Field(default=None, description="Timestamp of last message")
+    session_duration: timedelta | None = Field(default=None, description="Total session duration")
+
+    # Performance metrics
+    average_response_time: float | None = Field(
+        default=None, description="Average response time in milliseconds"
+    )
+    total_duration_ms: int = Field(
+        default=0, ge=0, description="Total processing time in milliseconds"
     )
 
 
@@ -225,14 +255,24 @@ class ToolExecution(ClaudeSDKBaseModel):
 
 
 class ConversationTree(ClaudeSDKBaseModel):
-    """Placeholder for future conversation threading implementation.
+    """Conversation tree structure based on parent_uuid relationships.
 
-    Will contain conversation tree structure based on parent_uuid relationships
-    for conversation threading support (planned for S03).
+    Organizes messages into a tree structure showing conversation branching
+    and threading based on parent_uuid relationships.
     """
 
-    # Placeholder fields for future implementation
-    pass
+    root_messages: list[UUID] = Field(
+        default_factory=list, description="UUIDs of messages with no parent (conversation roots)"
+    )
+    parent_to_children: dict[str, list[str]] = Field(
+        default_factory=dict, description="Mapping of parent UUID to list of child UUIDs"
+    )
+    orphaned_messages: list[UUID] = Field(
+        default_factory=list, description="Messages with parent_uuid not found in session"
+    )
+    circular_references: list[tuple[UUID, UUID]] = Field(
+        default_factory=list, description="Detected circular parent-child relationships"
+    )
 
 
 class ParsedSession(ClaudeSDKBaseModel):
@@ -249,52 +289,483 @@ class ParsedSession(ClaudeSDKBaseModel):
     summaries: list[str] = Field(default_factory=list, description="Summary records if present")
     conversation_tree: ConversationTree = Field(
         default_factory=ConversationTree,
-        description="Conversation tree structure (future threading support)",
+        description="Conversation tree structure with threading support",
     )
     metadata: SessionMetadata = Field(
         default_factory=SessionMetadata, description="Aggregated session statistics"
     )
+    tool_executions: list[ToolExecution] = Field(
+        default_factory=list, description="Extracted and correlated tool execution records"
+    )
 
-    def validate_session_integrity(self) -> bool:
-        """Validate session data integrity.
+    def validate_session_integrity(self) -> tuple[bool, list[str]]:
+        """Validate comprehensive session data integrity.
 
         Returns:
-            bool: True if session data is valid, False otherwise
+            tuple: (is_valid, list_of_issues) where is_valid is True if no issues found
         """
+        issues: list[str] = []
+
         # Check if session_id is consistent across all messages
         if self.messages:
             expected_session_id = self.messages[0].session_id
-            for message in self.messages:
+            for i, message in enumerate(self.messages):
                 if message.session_id != expected_session_id:
-                    return False
+                    issues.append(
+                        f"Message {i} has inconsistent session_id: "
+                        f"expected {expected_session_id}, got {message.session_id}"
+                    )
 
-        # Check if metadata aggregations match actual message data
+        # Check metadata consistency
         expected_message_count = len(self.messages)
-        return self.metadata.total_messages == expected_message_count
+        if self.metadata.total_messages != expected_message_count:
+            issues.append(
+                f"Metadata message count mismatch: metadata={self.metadata.total_messages}, "
+                f"actual={expected_message_count}"
+            )
+
+        # Validate conversation tree integrity
+        tree_issues = self._validate_conversation_tree()
+        issues.extend(tree_issues)
+
+        # Validate tool execution consistency
+        tool_issues = self._validate_tool_executions()
+        issues.extend(tool_issues)
+
+        # Validate metadata calculations
+        metadata_issues = self._validate_metadata_calculations()
+        issues.extend(metadata_issues)
+
+        # Check for duplicate UUIDs
+        uuid_issues = self._validate_unique_uuids()
+        issues.extend(uuid_issues)
+
+        # Check timestamp ordering
+        timestamp_issues = self._validate_timestamp_ordering()
+        issues.extend(timestamp_issues)
+
+        return len(issues) == 0, issues
+
+    def _validate_conversation_tree(self) -> list[str]:
+        """Validate conversation tree structure."""
+        issues: list[str] = []
+
+        if not self.conversation_tree:
+            return issues
+
+        # Check for orphaned messages
+        if self.conversation_tree.orphaned_messages:
+            issues.append(
+                f"Found {len(self.conversation_tree.orphaned_messages)} orphaned messages "
+                f"with missing parent references"
+            )
+
+        # Check for circular references
+        if self.conversation_tree.circular_references:
+            issues.append(
+                f"Found {len(self.conversation_tree.circular_references)} circular references "
+                f"in conversation threading"
+            )
+
+        # Validate parent-child relationships
+        all_message_uuids = {str(msg.uuid) for msg in self.messages}
+        for parent_uuid, children in self.conversation_tree.parent_to_children.items():
+            if parent_uuid not in all_message_uuids:
+                issues.append(f"Parent UUID {parent_uuid} not found in session messages")
+
+            for child_uuid in children:
+                if child_uuid not in all_message_uuids:
+                    issues.append(f"Child UUID {child_uuid} not found in session messages")
+
+        return issues
+
+    def _validate_tool_executions(self) -> list[str]:
+        """Validate tool execution consistency."""
+        issues: list[str] = []
+
+        # Check tool execution count matches metadata
+        if self.metadata.total_tool_executions != len(self.tool_executions):
+            issues.append(
+                f"Tool execution count mismatch: metadata={self.metadata.total_tool_executions}, "
+                f"actual={len(self.tool_executions)}"
+            )
+
+        # Check tool usage count consistency
+        tool_count_from_executions: dict[str, int] = {}
+        for execution in self.tool_executions:
+            tool_count_from_executions[execution.tool_name] = (
+                tool_count_from_executions.get(execution.tool_name, 0) + 1
+            )
+
+        for tool_name, metadata_count in self.metadata.tool_usage_count.items():
+            execution_count = tool_count_from_executions.get(tool_name, 0)
+            if metadata_count != execution_count:
+                issues.append(
+                    f"Tool {tool_name} count mismatch: metadata={metadata_count}, "
+                    f"executions={execution_count}"
+                )
+
+        return issues
+
+    def _validate_metadata_calculations(self) -> list[str]:
+        """Validate metadata calculations against message data."""
+        issues: list[str] = []
+
+        # Recalculate metadata and compare
+        calculated_metadata = self.calculate_metadata()
+
+        # Compare key metrics
+        if abs(self.metadata.total_cost - calculated_metadata.total_cost) > 0.001:
+            issues.append(
+                f"Total cost mismatch: stored={self.metadata.total_cost}, "
+                f"calculated={calculated_metadata.total_cost}"
+            )
+
+        if self.metadata.user_messages != calculated_metadata.user_messages:
+            issues.append(
+                f"User message count mismatch: stored={self.metadata.user_messages}, "
+                f"calculated={calculated_metadata.user_messages}"
+            )
+
+        if self.metadata.assistant_messages != calculated_metadata.assistant_messages:
+            issues.append(
+                f"Assistant message count mismatch: stored={self.metadata.assistant_messages}, "
+                f"calculated={calculated_metadata.assistant_messages}"
+            )
+
+        return issues
+
+    def _validate_unique_uuids(self) -> list[str]:
+        """Validate that all message UUIDs are unique."""
+        issues: list[str] = []
+
+        uuids = [msg.uuid for msg in self.messages]
+        unique_uuids = set(uuids)
+
+        if len(uuids) != len(unique_uuids):
+            issues.append(f"Duplicate UUIDs found: {len(uuids)} total, {len(unique_uuids)} unique")
+
+        return issues
+
+    def _validate_timestamp_ordering(self) -> list[str]:
+        """Validate that timestamps are in reasonable order."""
+        issues: list[str] = []
+
+        if len(self.messages) < 2:
+            return issues
+
+        # Check for major timestamp inconsistencies
+        sorted_messages = sorted(self.messages, key=lambda m: m.timestamp)
+
+        # Check if session start/end in metadata match actual data
+        if (
+            self.metadata.session_start
+            and sorted_messages
+            and self.metadata.session_start != sorted_messages[0].timestamp
+        ):
+            issues.append(
+                f"Session start timestamp mismatch: metadata={self.metadata.session_start}, "
+                f"actual={sorted_messages[0].timestamp}"
+            )
+
+        if (
+            self.metadata.session_end
+            and sorted_messages
+            and self.metadata.session_end != sorted_messages[-1].timestamp
+        ):
+            issues.append(
+                f"Session end timestamp mismatch: metadata={self.metadata.session_end}, "
+                f"actual={sorted_messages[-1].timestamp}"
+            )
+
+        return issues
 
     def calculate_metadata(self) -> SessionMetadata:
-        """Calculate session metadata from current messages.
+        """Calculate comprehensive session metadata from current messages.
 
         Returns:
-            SessionMetadata: Calculated metadata based on current messages
+            SessionMetadata: Complete calculated metadata based on current messages
         """
+        # Initialize counters
         total_cost = 0.0
         total_messages = len(self.messages)
-        tool_usage_count: dict[str, int] = {}
+        user_messages = 0
+        assistant_messages = 0
 
-        for message in self.messages:
+        # Token aggregations
+        total_input_tokens = 0
+        total_output_tokens = 0
+        cache_creation_tokens = 0
+        cache_read_tokens = 0
+
+        # Tool usage tracking
+        tool_usage_count: dict[str, int] = {}
+        total_tool_executions = 0
+
+        # Timing tracking
+        session_start: datetime | None = None
+        session_end: datetime | None = None
+        total_duration_ms = 0
+        response_times: list[int] = []
+
+        # Sort messages by timestamp for accurate session timing
+        sorted_messages = sorted(self.messages, key=lambda m: m.timestamp)
+
+        for message in sorted_messages:
+            # Update session start/end times
+            if session_start is None or message.timestamp < session_start:
+                session_start = message.timestamp
+            if session_end is None or message.timestamp > session_end:
+                session_end = message.timestamp
+
             # Aggregate costs
             if message.cost_usd:
                 total_cost += message.cost_usd
+
+            # Count message types
+            if message.message.role == Role.USER:
+                user_messages += 1
+            elif message.message.role == Role.ASSISTANT:
+                assistant_messages += 1
+
+            # Aggregate token usage
+            if message.message.usage:
+                usage = message.message.usage
+                total_input_tokens += usage.input_tokens
+                total_output_tokens += usage.output_tokens
+                cache_creation_tokens += usage.cache_creation_input_tokens
+                cache_read_tokens += usage.cache_read_input_tokens
+
+            # Aggregate processing time
+            if message.duration_ms:
+                total_duration_ms += message.duration_ms
+                response_times.append(message.duration_ms)
 
             # Count tool usage
             for content_block in message.message.content:
                 if isinstance(content_block, ToolUseBlock):
                     tool_name = content_block.name
                     tool_usage_count[tool_name] = tool_usage_count.get(tool_name, 0) + 1
+                    total_tool_executions += 1
+
+        # Calculate derived metrics
+        session_duration = None
+        if session_start and session_end:
+            session_duration = session_end - session_start
+
+        average_response_time = None
+        if response_times:
+            average_response_time = sum(response_times) / len(response_times)
 
         return SessionMetadata(
-            total_cost=total_cost, total_messages=total_messages, tool_usage_count=tool_usage_count
+            total_cost=total_cost,
+            total_messages=total_messages,
+            user_messages=user_messages,
+            assistant_messages=assistant_messages,
+            total_input_tokens=total_input_tokens,
+            total_output_tokens=total_output_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+            cache_read_tokens=cache_read_tokens,
+            tool_usage_count=tool_usage_count,
+            total_tool_executions=total_tool_executions,
+            session_start=session_start,
+            session_end=session_end,
+            session_duration=session_duration,
+            average_response_time=average_response_time,
+            total_duration_ms=total_duration_ms,
+        )
+
+    def build_conversation_tree(self) -> ConversationTree:
+        """Build conversation tree from message parent_uuid relationships.
+
+        Returns:
+            ConversationTree: Complete conversation threading structure
+        """
+        # Create mapping of UUID to message for quick lookup
+        uuid_to_message = {msg.uuid: msg for msg in self.messages}
+
+        # Track all UUIDs in the session
+        all_uuids = set(uuid_to_message.keys())
+
+        # Initialize tree structure
+        root_messages: list[UUID] = []
+        parent_to_children: dict[str, list[str]] = {}
+        orphaned_messages: list[UUID] = []
+        circular_references: list[tuple[UUID, UUID]] = []
+
+        def check_circular_reference(msg_uuid: UUID) -> bool:
+            """Check if this message creates a circular reference."""
+            visited: set[UUID] = set()
+            current: UUID | None = msg_uuid
+
+            while current is not None:
+                if current in visited:
+                    return True
+                visited.add(current)
+
+                message = uuid_to_message.get(current)
+                if not message:
+                    break
+
+                current = message.parent_uuid
+
+            return False
+
+        # Process each message to build tree structure
+        for message in self.messages:
+            msg_uuid = message.uuid
+            parent_uuid = message.parent_uuid
+
+            if parent_uuid is None:
+                # Root message (no parent)
+                root_messages.append(msg_uuid)
+            else:
+                # Check if parent exists in session
+                if parent_uuid not in all_uuids:
+                    # Orphaned message - parent not found
+                    orphaned_messages.append(msg_uuid)
+                else:
+                    # Check for circular references
+                    if check_circular_reference(msg_uuid):
+                        circular_references.append((msg_uuid, parent_uuid))
+                    else:
+                        # Valid parent-child relationship
+                        parent_str = str(parent_uuid)
+                        if parent_str not in parent_to_children:
+                            parent_to_children[parent_str] = []
+                        parent_to_children[parent_str].append(str(msg_uuid))
+
+        return ConversationTree(
+            root_messages=root_messages,
+            parent_to_children=parent_to_children,
+            orphaned_messages=orphaned_messages,
+            circular_references=circular_references,
+        )
+
+    def extract_tool_executions(self) -> list[ToolExecution]:
+        """Extract and correlate tool usage information from message content.
+
+        Returns:
+            List of ToolExecution records with correlated input/output pairs
+        """
+        tool_executions: list[ToolExecution] = []
+
+        # Create mapping of tool_use_id to ToolUseBlock for correlation
+        tool_use_blocks: dict[str, tuple[ToolUseBlock, datetime]] = {}
+
+        # First pass: collect all tool use blocks
+        for message in self.messages:
+            for content_block in message.message.content:
+                if isinstance(content_block, ToolUseBlock):
+                    tool_use_blocks[content_block.id] = (content_block, message.timestamp)
+
+        # Second pass: find tool results using message-level tool_use_result field
+        for message in self.messages:
+            if message.tool_use_result and isinstance(message.tool_use_result, ToolResult):
+                tool_use_id = message.tool_use_result.tool_use_id
+
+                # Find the corresponding tool use block
+                if tool_use_id in tool_use_blocks:
+                    tool_use_block, tool_use_timestamp = tool_use_blocks[tool_use_id]
+
+                    # Calculate execution duration - if same message, use message duration
+                    if tool_use_timestamp == message.timestamp:
+                        execution_duration = (
+                            timedelta(milliseconds=message.duration_ms)
+                            if message.duration_ms
+                            else timedelta(0)
+                        )
+                    else:
+                        execution_duration = message.timestamp - tool_use_timestamp
+
+                    # Create ToolExecution record
+                    tool_execution = ToolExecution(
+                        tool_name=tool_use_block.name,
+                        input=tool_use_block.input,
+                        output=message.tool_use_result,
+                        duration=execution_duration,
+                        timestamp=tool_use_timestamp,
+                    )
+
+                    tool_executions.append(tool_execution)
+
+        # Sort by timestamp for consistent ordering
+        tool_executions.sort(key=lambda te: te.timestamp)
+
+        return tool_executions
+
+    @classmethod
+    def from_message_records(
+        cls,
+        messages: list[MessageRecord],
+        session_id: str | None = None,
+        summaries: list[str] | None = None,
+    ) -> "ParsedSession":
+        """Assemble a complete ParsedSession from MessageRecord list.
+
+        Args:
+            messages: List of MessageRecord objects to assemble into a session
+            session_id: Override session ID (auto-detected from messages if None)
+            summaries: Optional summary records for the session
+
+        Returns:
+            ParsedSession: Complete session with threading, metadata, and tool executions
+
+        Raises:
+            ValueError: If messages list is empty or session_id cannot be determined
+        """
+        if not messages:
+            raise ValueError("Cannot create ParsedSession from empty message list")
+
+        # Auto-detect session_id if not provided
+        if session_id is None:
+            session_id = messages[0].session_id
+
+            # Validate all messages have the same session_id
+            for message in messages:
+                if message.session_id != session_id:
+                    raise ValueError(
+                        f"Inconsistent session IDs in messages: expected {session_id}, "
+                        f"found {message.session_id}"
+                    )
+
+        # Create initial ParsedSession with messages
+        session = cls(
+            session_id=session_id,
+            messages=messages,
+            summaries=summaries or [],
+        )
+
+        # Build conversation tree
+        conversation_tree = session.build_conversation_tree()
+
+        # Calculate metadata
+        metadata = session.calculate_metadata()
+
+        # Extract tool executions
+        tool_executions = session.extract_tool_executions()
+
+        # Return complete assembled session
+        return cls(
+            session_id=session_id,
+            messages=messages,
+            summaries=summaries or [],
+            conversation_tree=conversation_tree,
+            metadata=metadata,
+            tool_executions=tool_executions,
+        )
+
+    def reconstruct_session(self) -> None:
+        """Reconstruct session components from current messages.
+
+        Updates conversation_tree, metadata, and tool_executions in place
+        based on current messages list.
+        """
+        # Note: This would require model reconstruction since models are frozen
+        # In practice, use from_message_records() to create a new instance
+        raise NotImplementedError(
+            "ParsedSession is immutable. Use from_message_records() to create "
+            "a new session with updated components."
         )
 
 

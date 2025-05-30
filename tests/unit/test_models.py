@@ -1083,10 +1083,13 @@ class TestParsedSession:
             timestamp=datetime.now(),
         )
 
-        metadata = SessionMetadata(total_messages=1)
+        # Use properly calculated metadata
+        metadata = SessionMetadata(total_messages=1, user_messages=1, assistant_messages=0)
         session = ParsedSession(session_id="session_123", messages=[record1], metadata=metadata)
 
-        assert session.validate_session_integrity() is True
+        is_valid, issues = session.validate_session_integrity()
+        assert is_valid is True
+        assert len(issues) == 0
 
     def test_validate_session_integrity_invalid_session_id(self):
         """Test session integrity validation with mismatched session IDs."""
@@ -1106,12 +1109,27 @@ class TestParsedSession:
             timestamp=datetime.now(),
         )
 
-        session = ParsedSession(
-            session_id="session_456",  # Different session_id
-            messages=[record1],
+        # Create second record with different session ID to trigger inconsistency detection
+        record2 = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/test"),
+            sessionId="session_456",  # Different session ID - this will trigger inconsistency
+            version="1.0.0",
+            type=MessageType.USER,
+            message=message1,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
         )
 
-        assert session.validate_session_integrity() is False
+        session = ParsedSession(
+            session_id="session_123",
+            messages=[record1, record2],  # Mixed session IDs in messages
+        )
+
+        is_valid, issues = session.validate_session_integrity()
+        assert is_valid is False
+        assert any("inconsistent session_id" in issue for issue in issues)
 
     def test_validate_session_integrity_invalid_message_count(self):
         """Test session integrity validation with wrong message count."""
@@ -1135,7 +1153,9 @@ class TestParsedSession:
         metadata = SessionMetadata(total_messages=5)  # Should be 1
         session = ParsedSession(session_id="session_123", messages=[record1], metadata=metadata)
 
-        assert session.validate_session_integrity() is False
+        is_valid, issues = session.validate_session_integrity()
+        assert is_valid is False
+        assert any("message count mismatch" in issue for issue in issues)
 
     def test_calculate_metadata(self):
         """Test metadata calculation from messages."""
@@ -1197,7 +1217,9 @@ class TestParsedSession:
         )
 
         # Should pass with empty messages if metadata is consistent
-        assert session.validate_session_integrity() is True
+        is_valid, issues = session.validate_session_integrity()
+        assert is_valid is True
+        assert len(issues) == 0
 
     def test_calculate_metadata_with_none_costs(self):
         """Test metadata calculation when cost_usd is None."""
@@ -1305,4 +1327,449 @@ class TestParsedSession:
         )
 
         # Should fail validation due to inconsistent session IDs between messages
-        assert session.validate_session_integrity() is False
+        is_valid, issues = session.validate_session_integrity()
+        assert is_valid is False
+        assert any("inconsistent session_id" in issue for issue in issues)
+
+
+class TestHypothesisPropertyBasedTests:
+    """Property-based tests using hypothesis for edge case validation."""
+
+    def test_text_block_with_arbitrary_text(self):
+        """Test TextBlock with arbitrary text strings."""
+        from hypothesis import given
+        from hypothesis import strategies as st
+
+        @given(text=st.text())
+        def test_arbitrary_text(text):
+            block = TextBlock(text=text)
+            assert block.text == text
+            assert block.type == "text"
+            # Test serialization round-trip
+            data = block.model_dump()
+            reconstructed = TextBlock(**data)
+            assert reconstructed == block
+
+        test_arbitrary_text()
+
+    def test_thinking_block_with_arbitrary_content(self):
+        """Test ThinkingBlock with arbitrary thinking and signature strings."""
+        from hypothesis import given
+        from hypothesis import strategies as st
+
+        @given(thinking=st.text(min_size=1), signature=st.text(min_size=1))
+        def test_arbitrary_thinking(thinking, signature):
+            block = ThinkingBlock(thinking=thinking, signature=signature)
+            assert block.thinking == thinking
+            assert block.signature == signature
+            assert block.type == "thinking"
+            # Test immutability
+            with pytest.raises(ValueError, match="frozen"):
+                block.thinking = "modified"
+
+        test_arbitrary_thinking()
+
+    def test_tool_use_block_with_arbitrary_input(self):
+        """Test ToolUseBlock with arbitrary input dictionaries."""
+        from hypothesis import given
+        from hypothesis import strategies as st
+
+        @given(
+            tool_id=st.text(min_size=1),
+            name=st.text(min_size=1),
+            input_data=st.dictionaries(
+                keys=st.text(min_size=1, max_size=50),
+                values=st.one_of(
+                    st.text(), st.integers(), st.booleans(), st.floats(allow_nan=False)
+                ),
+                min_size=0,
+                max_size=10,
+            ),
+        )
+        def test_arbitrary_tool_input(tool_id, name, input_data):
+            block = ToolUseBlock(id=tool_id, name=name, input=input_data)
+            assert block.id == tool_id
+            assert block.name == name
+            assert block.input == input_data
+            assert block.type == "tool_use"
+
+        test_arbitrary_tool_input()
+
+    def test_token_usage_with_arbitrary_values(self):
+        """Test TokenUsage with arbitrary non-negative integer values."""
+        from hypothesis import given
+        from hypothesis import strategies as st
+
+        @given(
+            input_tokens=st.integers(min_value=0, max_value=1000000),
+            cache_creation=st.integers(min_value=0, max_value=100000),
+            cache_read=st.integers(min_value=0, max_value=100000),
+            output_tokens=st.integers(min_value=0, max_value=1000000),
+            service_tier=st.text(min_size=1, max_size=20),
+        )
+        def test_arbitrary_token_values(
+            input_tokens, cache_creation, cache_read, output_tokens, service_tier
+        ):
+            usage = TokenUsage(
+                input_tokens=input_tokens,
+                cache_creation_input_tokens=cache_creation,
+                cache_read_input_tokens=cache_read,
+                output_tokens=output_tokens,
+                service_tier=service_tier,
+            )
+            assert usage.input_tokens == input_tokens
+            assert usage.cache_creation_input_tokens == cache_creation
+            assert usage.cache_read_input_tokens == cache_read
+            assert usage.output_tokens == output_tokens
+            assert usage.service_tier == service_tier
+
+        test_arbitrary_token_values()
+
+    def test_session_metadata_with_arbitrary_values(self):
+        """Test SessionMetadata with arbitrary non-negative values."""
+        from hypothesis import given
+        from hypothesis import strategies as st
+
+        @given(
+            total_cost=st.floats(
+                min_value=0.0, max_value=10000.0, allow_nan=False, allow_infinity=False
+            ),
+            total_messages=st.integers(min_value=0, max_value=100000),
+            tool_counts=st.dictionaries(
+                keys=st.text(min_size=1, max_size=20),
+                values=st.integers(min_value=0, max_value=1000),
+                min_size=0,
+                max_size=20,
+            ),
+        )
+        def test_arbitrary_metadata_values(total_cost, total_messages, tool_counts):
+            metadata = SessionMetadata(
+                total_cost=total_cost, total_messages=total_messages, tool_usage_count=tool_counts
+            )
+            assert metadata.total_cost == total_cost
+            assert metadata.total_messages == total_messages
+            assert metadata.tool_usage_count == tool_counts
+
+        test_arbitrary_metadata_values()
+
+
+class TestErrorHandlingEdgeCases:
+    """Test error handling for invalid data and edge cases."""
+
+    def test_text_block_empty_text(self):
+        """Test TextBlock with empty text."""
+        # Empty text should be valid
+        block = TextBlock(text="")
+        assert block.text == ""
+        assert block.type == "text"
+
+    def test_text_block_very_long_text(self):
+        """Test TextBlock with very long text."""
+        long_text = "x" * 1000000  # 1MB of text
+        block = TextBlock(text=long_text)
+        assert len(block.text) == 1000000
+        assert block.type == "text"
+
+    def test_tool_use_block_empty_input(self):
+        """Test ToolUseBlock with empty input dictionary."""
+        block = ToolUseBlock(id="test_id", name="test_tool", input={})
+        assert block.input == {}
+        assert block.type == "tool_use"
+
+    def test_token_usage_boundary_values(self):
+        """Test TokenUsage with boundary values."""
+        # Test zero values
+        usage = TokenUsage(input_tokens=0, output_tokens=0)
+        assert usage.input_tokens == 0
+        assert usage.output_tokens == 0
+
+        # Test large values
+        usage = TokenUsage(input_tokens=999999999, output_tokens=999999999)
+        assert usage.input_tokens == 999999999
+        assert usage.output_tokens == 999999999
+
+    def test_token_usage_negative_values_rejected(self):
+        """Test TokenUsage rejects negative values."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="greater than or equal to 0"):
+            TokenUsage(input_tokens=-1, output_tokens=100)
+
+        with pytest.raises(ValidationError, match="greater than or equal to 0"):
+            TokenUsage(input_tokens=100, output_tokens=-1)
+
+    def test_session_metadata_negative_values_rejected(self):
+        """Test SessionMetadata rejects negative values."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="greater than or equal to 0"):
+            SessionMetadata(total_cost=-1.0)
+
+        with pytest.raises(ValidationError, match="greater than or equal to 0"):
+            SessionMetadata(total_messages=-1)
+
+    def test_message_record_invalid_uuid_format(self):
+        """Test MessageRecord rejects invalid UUID format."""
+        from datetime import datetime
+        from pathlib import Path
+
+        from pydantic import ValidationError
+
+        message = Message(role=Role.USER, content=[TextBlock(text="Test")])
+
+        with pytest.raises(ValidationError, match="Input should be a valid UUID"):
+            MessageRecord(
+                isSidechain=False,
+                userType=UserType.EXTERNAL,
+                cwd=Path("/test"),
+                sessionId="session_123",
+                version="1.0.0",
+                type=MessageType.USER,
+                message=message,
+                uuid="invalid-uuid-format",
+                timestamp=datetime.now(),
+            )
+
+    def test_message_record_invalid_datetime_format(self):
+        """Test MessageRecord rejects invalid datetime format."""
+        from pathlib import Path
+        from uuid import uuid4
+
+        from pydantic import ValidationError
+
+        message = Message(role=Role.USER, content=[TextBlock(text="Test")])
+
+        with pytest.raises(ValidationError):
+            MessageRecord(
+                isSidechain=False,
+                userType=UserType.EXTERNAL,
+                cwd=Path("/test"),
+                sessionId="session_123",
+                version="1.0.0",
+                type=MessageType.USER,
+                message=message,
+                uuid=uuid4(),
+                timestamp="invalid-datetime-format",
+            )
+
+    def test_message_record_invalid_enum_values(self):
+        """Test MessageRecord rejects invalid enum values."""
+        from datetime import datetime
+        from pathlib import Path
+        from uuid import uuid4
+
+        from pydantic import ValidationError
+
+        message = Message(role=Role.USER, content=[TextBlock(text="Test")])
+
+        with pytest.raises(ValidationError, match="Input should be 'external' or 'internal'"):
+            MessageRecord(
+                isSidechain=False,
+                userType="invalid_user_type",
+                cwd=Path("/test"),
+                sessionId="session_123",
+                version="1.0.0",
+                type=MessageType.USER,
+                message=message,
+                uuid=uuid4(),
+                timestamp=datetime.now(),
+            )
+
+    def test_content_block_type_field_immutable(self):
+        """Test content block type fields cannot be changed."""
+        from pydantic import ValidationError
+
+        # Test TextBlock
+        with pytest.raises(ValidationError, match="Input should be 'text'"):
+            TextBlock(text="test", type="invalid")
+
+        # Test ThinkingBlock
+        with pytest.raises(ValidationError, match="Input should be 'thinking'"):
+            ThinkingBlock(thinking="test", signature="sig", type="invalid")
+
+        # Test ToolUseBlock
+        with pytest.raises(ValidationError, match="Input should be 'tool_use'"):
+            ToolUseBlock(id="test", name="test", input={}, type="invalid")
+
+    def test_model_extra_fields_forbidden(self):
+        """Test models reject extra fields."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            TextBlock(text="test", extra_field="not_allowed")
+
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            ThinkingBlock(thinking="test", signature="sig", extra_field="not_allowed")
+
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            TokenUsage(input_tokens=100, output_tokens=50, extra_field="not_allowed")
+
+
+class TestPerformanceBenchmarks:
+    """Performance benchmarks for model parsing and validation."""
+
+    def test_text_block_creation_performance(self):
+        """Benchmark TextBlock creation with various text sizes."""
+        import time
+
+        # Test with different text sizes
+        text_sizes = [100, 1000, 10000, 100000]
+
+        for size in text_sizes:
+            text = "x" * size
+
+            start_time = time.perf_counter()
+            for _ in range(1000):  # Create 1000 instances
+                TextBlock(text=text)
+            end_time = time.perf_counter()
+
+            duration = end_time - start_time
+            # Performance requirement: should create 1000 instances in < 1 second
+            assert duration < 1.0, f"TextBlock creation too slow for size {size}: {duration:.3f}s"
+
+    def test_message_record_list_performance(self):
+        """Benchmark large MessageRecord list processing."""
+        import time
+        from datetime import datetime
+        from pathlib import Path
+        from uuid import uuid4
+
+        # Create a large list of MessageRecords
+        message_records = []
+        start_time = time.perf_counter()
+
+        for i in range(1000):  # Create 1000 message records
+            message = Message(role=Role.USER, content=[TextBlock(text=f"Message {i}")])
+            record = MessageRecord(
+                isSidechain=False,
+                userType=UserType.EXTERNAL,
+                cwd=Path("/test"),
+                sessionId="session_123",
+                version="1.0.0",
+                type=MessageType.USER,
+                message=message,
+                uuid=uuid4(),
+                timestamp=datetime.now(),
+                costUSD=0.01,
+            )
+            message_records.append(record)
+
+        end_time = time.perf_counter()
+        duration = end_time - start_time
+
+        # Performance requirement: should create 1000 MessageRecords in < 2 seconds
+        assert duration < 2.0, f"MessageRecord creation too slow: {duration:.3f}s"
+        assert len(message_records) == 1000
+
+    def test_session_metadata_calculation_performance(self):
+        """Benchmark session metadata calculation with large message lists."""
+        import time
+        from datetime import datetime
+        from pathlib import Path
+        from uuid import uuid4
+
+        # Create messages with various content types
+        messages = []
+        for i in range(1000):
+            if i % 3 == 0:
+                content = [TextBlock(text=f"Text message {i}")]
+            elif i % 3 == 1:
+                content = [
+                    ToolUseBlock(id=f"tool_{i}", name="bash", input={"command": f"echo {i}"})
+                ]
+            else:
+                content = [
+                    TextBlock(text=f"Mixed message {i}"),
+                    ToolUseBlock(id=f"tool_{i}", name="read", input={"file": f"file_{i}.txt"}),
+                ]
+
+            message = Message(role=Role.ASSISTANT, content=content)
+            record = MessageRecord(
+                isSidechain=False,
+                userType=UserType.EXTERNAL,
+                cwd=Path("/test"),
+                sessionId="session_123",
+                version="1.0.0",
+                type=MessageType.ASSISTANT,
+                message=message,
+                uuid=uuid4(),
+                timestamp=datetime.now(),
+                costUSD=0.01 + (i * 0.001),  # Varying costs
+            )
+            messages.append(record)
+
+        session = ParsedSession(session_id="session_123", messages=messages)
+
+        # Benchmark metadata calculation
+        start_time = time.perf_counter()
+        calculated_metadata = session.calculate_metadata()
+        end_time = time.perf_counter()
+
+        duration = end_time - start_time
+
+        # Performance requirement: should calculate metadata for 1000 messages in < 0.1 seconds
+        assert duration < 0.1, f"Metadata calculation too slow: {duration:.3f}s"
+        assert calculated_metadata.total_messages == 1000
+        assert calculated_metadata.total_cost > 0
+        assert len(calculated_metadata.tool_usage_count) > 0
+
+    def test_model_serialization_performance(self):
+        """Benchmark model serialization/deserialization performance."""
+        import time
+        from datetime import datetime
+        from pathlib import Path
+        from uuid import uuid4
+
+        # Create a complex message record
+        content = [
+            TextBlock(text="This is a test message with various content types."),
+            ThinkingBlock(
+                thinking="Let me analyze this request carefully.", signature="reasoning_v1"
+            ),
+            ToolUseBlock(id="tool_123", name="bash", input={"command": "ls -la", "timeout": 30}),
+        ]
+        message = Message(
+            role=Role.ASSISTANT,
+            content=content,
+            model="claude-3-opus-20240229",
+            usage=TokenUsage(input_tokens=150, output_tokens=200),
+        )
+
+        record = MessageRecord(
+            isSidechain=False,
+            userType=UserType.EXTERNAL,
+            cwd=Path("/home/user/project"),
+            sessionId="session_perf_test",
+            version="1.2.3",
+            type=MessageType.ASSISTANT,
+            message=message,
+            uuid=uuid4(),
+            timestamp=datetime.now(),
+            costUSD=0.025,
+            durationMs=1500,
+        )
+
+        # Benchmark serialization
+        start_time = time.perf_counter()
+        for _ in range(1000):
+            record.model_dump()
+        end_time = time.perf_counter()
+
+        serialization_duration = end_time - start_time
+
+        # Benchmark deserialization
+        serialized_data = record.model_dump(by_alias=True)
+        start_time = time.perf_counter()
+        for _ in range(1000):
+            MessageRecord(**serialized_data)
+        end_time = time.perf_counter()
+
+        deserialization_duration = end_time - start_time
+
+        # Performance requirements: 1000 operations should complete in < 1 second each
+        assert serialization_duration < 1.0, (
+            f"Serialization too slow: {serialization_duration:.3f}s"
+        )
+        assert deserialization_duration < 1.0, (
+            f"Deserialization too slow: {deserialization_duration:.3f}s"
+        )
