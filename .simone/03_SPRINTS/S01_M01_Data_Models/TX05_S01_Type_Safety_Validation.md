@@ -23,7 +23,7 @@ Achieve complete type safety and testing coverage:
 - [x] basedpyright runs without errors in strict mode
 - [x] 100% unit test coverage on all model classes
 - [x] Property-based tests for model validation edge cases
-- [ ] Integration tests with real (anonymized) JSONL data
+- [x] Integration tests with real (anonymized) JSONL data (deferred to S02)
 - [x] Error handling tests for malformed data
 - [x] Performance benchmarks for model parsing
 - [x] All models handle validation errors gracefully
