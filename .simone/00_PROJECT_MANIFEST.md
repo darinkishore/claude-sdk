@@ -1,10 +1,10 @@
 ---
 project_name: Python Claude Code SDK
-current_milestone_id: M01
-highest_sprint_in_milestone: S03
-current_sprint_id: S03
-status: completed
-last_updated: 2025-05-30 01:00
+current_milestone_id: M02
+highest_sprint_in_milestone: S04
+current_sprint_id: S04
+status: in_progress
+last_updated: 2025-05-30 13:22
 ---
 
 # Project Manifest: Python Claude Code SDK
@@ -21,8 +21,8 @@ This project follows a milestone-based development approach.
 
 ## 2. Current Focus
 
-- **Milestone:** M01 - Core Session Parser (✅ COMPLETED)
-- **Sprint:** S03 - Public API & Library Integration (✅ COMPLETED)
+- **Milestone:** M02 - Analysis Helpers & Project Integration (🚧 IN PROGRESS)
+- **Sprint:** S04 - Project-Level Integration & API Enhancement (📋 PLANNED)
 
 ## 3. Milestones Overview
 
@@ -49,14 +49,16 @@ This project follows a milestone-based development approach.
 - Clean public interface and documentation
 - Production-ready library distribution
 
-### M02: Analysis Helpers (📋 PLANNED)
-**Goal**: Make the parsed data actually useful
+### M02: Analysis Helpers & Project Integration (🚧 IN PROGRESS)
+**Goal**: Add project-level abstractions and enhanced analysis capabilities
 
-**What we add**:
-- Session discovery: `discover_sessions()`
-- Tool usage analysis
-- Cost/token aggregation
-- Export utilities (JSON, CSV)
+**Sprint Roadmap**:
+
+#### S04: Project-Level Integration & API Enhancement (📋 PLANNED)
+- Project model with session aggregation
+- Enhanced discovery API: find_projects(), load_project()
+- Project-based filtering and analysis capabilities
+- Session-to-project navigation and back-references
 
 ## 4. Key Documentation
 
@@ -66,9 +68,9 @@ This project follows a milestone-based development approach.
 
 ## 5. Quick Links
 
-- **Current Task:** T03_S03_Final_Polish_Distribution (✅ completed)
-- **Current Sprint:** [S03 Public API](./03_SPRINTS/S03_M01_Public_API/) (✅ completed)
-- **Current Requirements:** [M01 Core Session Parser PRD](./02_REQUIREMENTS/M01_Core_Session_Parser/PRD_Core_Session_Parser.md) (✅ fulfilled)
+- **Current Task:** T01_S04_Core_Project_Model (✅ completed)
+- **Current Sprint:** [S04 Project Integration](./03_SPRINTS/S04_M02_Project_Integration/) (📋 planned)
+- **Current Requirements:** [M02 Analysis Helpers PRD](./02_REQUIREMENTS/M02_Analysis_Helpers/) (📋 planned)
 - **Project Reviews:** [Latest Review](./10_STATE_OF_PROJECT/)
 
 ## 6. Development Status
