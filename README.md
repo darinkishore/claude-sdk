@@ -17,7 +17,7 @@ A clean, intuitive interface for working with Claude Code JSONL session files. D
 ## Installation
 
 ```bash
-pip install claude-sdk
+uv add claude-sdk
 ```
 
 ## Quick Start
@@ -46,121 +46,184 @@ sessions = find_sessions(project="apply-model")
 print(f"Found {len(sessions)} sessions in apply-model project")
 ```
 
-## Project-Level Analysis
+## Data Model Hierarchy
 
-The SDK now supports project-level analysis, allowing you to aggregate data across all sessions in a Claude Code project:
-
-```python
-from claude_sdk import find_projects, load_project
-
-# Discover all projects
-projects = find_projects()
-print(f"Found {len(projects)} projects")
-
-# List project names
-for i, project_path in enumerate(projects[:5]):
-    print(f"{i+1}. {project_path.name}")
-
-# Load a project by name or path
-project = load_project("apply-model")  # By name
-# OR
-project = load_project(projects[0])  # By path
-
-# Access aggregated project data
-print(f"Project: {project.name}")
-print(f"Total sessions: {project.total_sessions}")
-print(f"Total cost: ${project.total_cost:.4f}")
-print(f"Tools used: {', '.join(project.tools_used)}")
-
-# Tool usage breakdown
-for tool, count in project.tool_usage_count.items():
-    print(f"{tool}: {count} uses")
-
-# Access individual sessions
-for session in project.sessions[:5]:
-    print(f"Session {session.session_id}: ${session.total_cost:.4f}")
-```
-
-## Key Concepts
-
-### Session Object
-
-The `Session` class is your primary interface to Claude Code session data:
-
-```python
-session = load("conversation.jsonl")
-
-# Core properties
-session.session_id          # Unique session identifier
-session.messages            # List of Message objects
-session.total_cost          # Total session cost in USD
-session.tools_used          # Set of tool names used
-session.duration            # Session duration as timedelta
-
-# Analysis properties
-session.tool_costs          # Cost breakdown by tool
-session.cost_by_turn        # Cost per message turn
-session.tool_executions     # Detailed tool execution records
-```
-
-### Message Object
-
-Each message in a session provides rich information:
-
-```python
-for msg in session.messages:
-    msg.role                # "user" or "assistant"
-    msg.text                # Full message text content
-    msg.cost                # Message cost if available
-    msg.is_sidechain        # True if in a sidechain
-    msg.timestamp           # Message creation time
-    msg.uuid                # Unique message identifier
-    msg.parent_uuid         # Parent message UUID
-    msg.tools               # List of tools used
-```
+The SDK provides a clean hierarchy: **Project** → **Session** → **Message** → **Tool**
 
 ### Project Object
 
-The `Project` class aggregates data across all sessions in a Claude Code project:
+A project represents a Claude Code project directory containing multiple sessions:
 
 ```python
 project = load_project("apply-model")
 
-# Core properties
-project.name                # Human-readable project name
-project.project_path        # Full path to project directory
-project.sessions            # List of all sessions in the project
-project.total_sessions      # Number of sessions
+# Properties
+project.name                 # str - Human-readable project name
+project.project_path         # Path - Full path to project directory
+project.sessions             # list[Session] - All sessions in the project
+project.total_sessions       # int - Number of sessions
+project.total_cost           # float - Total cost across all sessions (USD)
+project.tools_used           # set[str] - All unique tools used
+project.tool_usage_count     # dict[str, int] - Tool name to usage count
+project.first_session_date   # datetime | None - Earliest session start
+project.last_session_date    # datetime | None - Latest session start
+project.total_duration       # timedelta | None - Time span of project
 
-# Aggregated data
-project.total_cost          # Total cost across all sessions
-project.tools_used          # Set of all tools used
-project.tool_usage_count    # Dict mapping tools to usage counts
-project.first_session_date  # Earliest session start time
-project.last_session_date   # Latest session start time
-project.total_duration      # Time span from first to last session
+# Example usage
+print(f"Project: {project.name}")
+print(f"Sessions: {project.total_sessions}")
+print(f"Total cost: ${project.total_cost:.4f}")
+print(f"Duration: {project.total_duration.days} days")
+
+for tool, count in project.tool_usage_count.items():
+    print(f"  {tool}: {count} uses")
 ```
 
-## Tool Usage Analysis
+### Session Object
 
-Analyze tool patterns and costs:
+A session represents a single conversation loaded from a JSONL file:
 
 ```python
-from claude_sdk import load
-
 session = load("conversation.jsonl")
 
-# Get cost breakdown by tool
-for tool, cost in session.tool_costs.items():
-    print(f"{tool}: ${cost:.4f} USD")
+# Core properties
+session.session_id           # str - Unique session identifier
+session.project_name         # str | None - Name of containing project
+session.project_path         # Path | None - Path to containing project
+session.messages             # list[Message] - All messages in order
+session.metadata             # SessionMetadata - Session metadata
+session.total_cost           # float - Total session cost (USD)
+session.tools_used           # set[str] - Unique tools used
+session.duration             # timedelta | None - Session duration
 
-# Analyze Bash tool usage
-bash_commands = []
+# Analysis properties
+session.tool_costs           # dict[str, float] - Cost per tool
+session.cost_by_turn         # list[float] - Cost per message turn
+session.tool_executions      # list[ToolExecution] - All tool uses
+
+# Metadata sub-properties
+session.metadata.session_start      # datetime | None
+session.metadata.session_end        # datetime | None
+session.metadata.total_cost         # float
+session.metadata.compute_time_ms    # int | None
+session.metadata.message_count      # int
+session.metadata.session_id         # str
+```
+
+### Message Object
+
+Each message in a session contains the conversation content and metadata:
+
+```python
 for msg in session.messages:
-    if "Bash" in msg.tools:
-        bash_commands.append(msg.text)
+    # Core properties
+    msg.role                 # Role - "user" or "assistant" enum
+    msg.text                 # str - Full message text content
+    msg.content              # list[TextBlock | ToolUseBlock] - Content blocks
+    msg.cost                 # float | None - Message cost if available
+    msg.tools                # list[str] - Names of tools used
+
+    # Metadata properties
+    msg.uuid                 # str - Unique message identifier
+    msg.parent_uuid          # str | None - Parent message UUID
+    msg.timestamp            # datetime - Message creation time
+    msg.is_sidechain         # bool - True if in a sidechain
+    msg.model                # str | None - Model used (e.g. "claude-3-5-sonnet")
+    msg.compute_time_ms      # int | None - Computation time
+
+    # Usage properties
+    msg.cache_read_tokens    # int | None - Cached tokens read
+    msg.cache_write_tokens   # int | None - Cached tokens written
+    msg.input_tokens         # int | None - Input token count
+    msg.output_tokens        # int | None - Output token count
+
+# Example: Find expensive messages
+expensive_msgs = [m for m in session.messages if m.cost and m.cost > 0.01]
+for msg in expensive_msgs:
+    print(f"{msg.role} at {msg.timestamp}: ${msg.cost:.4f}")
+```
+
+### Tool Objects
+
+Tool executions are tracked with detailed information:
+
+```python
+# ToolExecution - Represents a single tool use
+for tool_exec in session.tool_executions:
+    tool_exec.tool_name      # str - Name of the tool (e.g., "Bash", "Read")
+    tool_exec.input_data     # dict - Tool input parameters
+    tool_exec.output         # str | None - Tool output/result
+    tool_exec.error          # str | None - Error message if failed
+    tool_exec.timestamp      # datetime - When tool was executed
+    tool_exec.message_uuid   # str - UUID of containing message
+
+# ToolUseBlock - Part of message content
+for msg in session.messages:
+    for block in msg.content:
+        if isinstance(block, ToolUseBlock):
+            block.type           # Literal["tool_use"]
+            block.id             # str - Unique block ID
+            block.name           # str - Tool name
+            block.input          # dict - Tool parameters
+
+# Example: Analyze Bash commands
+bash_commands = []
+for tool in session.tool_executions:
+    if tool.tool_name == "Bash":
+        command = tool.input_data.get("command", "")
+        bash_commands.append({
+            "command": command,
+            "output": tool.output,
+            "error": tool.error,
+            "timestamp": tool.timestamp
+        })
 
 print(f"Found {len(bash_commands)} Bash commands")
+```
+
+## Common Usage Patterns
+
+### Project Analysis
+
+```python
+from claude_sdk import find_projects, load_project
+
+# Find and analyze all projects
+projects = find_projects()
+for project_path in projects[:5]:
+    project = load_project(project_path)
+    print(f"{project.name}: {project.total_sessions} sessions, ${project.total_cost:.2f}")
+```
+
+### Session Filtering
+
+```python
+from claude_sdk import find_sessions, load
+
+# Find sessions for specific project
+sessions = find_sessions(project="apply-model")
+for session_path in sessions:
+    session = load(session_path)
+    if session.total_cost > 1.0:  # Expensive sessions
+        print(f"{session.session_id}: ${session.total_cost:.2f}")
+```
+
+### Tool Analysis
+
+```python
+# Analyze tool usage across a project
+project = load_project("apply-model")
+total_tool_uses = sum(project.tool_usage_count.values())
+
+for tool, count in sorted(project.tool_usage_count.items(), key=lambda x: x[1], reverse=True):
+    percentage = (count / total_tool_uses) * 100
+    print(f"{tool}: {count} uses ({percentage:.1f}%)")
+
+# Extract specific tool executions
+for session in project.sessions:
+    for tool in session.tool_executions:
+        if tool.tool_name == "Write" and tool.error:
+            print(f"Write error in {session.session_id}: {tool.error}")
 ```
 
 ## API Reference
