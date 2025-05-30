@@ -2,7 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+tmp/**
 # C extensions
 *.so
 
@@ -178,3 +178,5 @@ result-*
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Autonomous development script
