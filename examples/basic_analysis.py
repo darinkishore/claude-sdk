@@ -51,16 +51,20 @@ def analyze_session(session_path):
 
     # Get the main conversation chain (no sidechains)
     main_chain = session.get_main_chain()
-    for _, msg in enumerate(main_chain[: max_preview * 2]):
-        # Display message info using message.role property for simplicity
-        text = (
-            msg.message.content[0].text
-            if hasattr(msg.message.content[0], "text")
-            else "[Non-text content]"
-        )
+    for _i, msg in enumerate(main_chain[: max_preview * 2]):
+        # Use the simplified Message properties for cleaner access
+        text = msg.text
         if len(text) > 100:
             text = text[:97] + "..."
-        print(f"  {msg.message.role}: {text}")
+        print(f"  {msg.role}: {text}")
+
+        # Show cost for assistant messages if available
+        if msg.role == "assistant" and msg.cost:
+            print(f"    Cost: ${msg.cost:.4f}")
+
+        # Show tools used in this message
+        if msg.tools:
+            print(f"    Tools: {', '.join(msg.tools)}")
 
 
 def main():

@@ -5,9 +5,10 @@ This example demonstrates how to use the Claude SDK to:
 2. Analyze tool usage patterns
 3. Calculate tool costs
 4. Extract detailed tool execution information
+5. Find patterns in tool success/failure rates
 """
 
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from claude_sdk import find_sessions, load
@@ -48,28 +49,110 @@ def analyze_tool_usage(session_path):
             percentage = (cost / total_tool_cost * 100) if total_tool_cost else 0
             print(f"  {tool}: ${cost:.4f} ({percentage:.1f}%)")
 
-    # Detailed tool execution analysis
+    # Analyze tool usage patterns by message sequence
+    print("\nTool usage patterns:")
+
+    # Track message indices where tools are used
+    tool_positions = defaultdict(list)
+    for i, msg in enumerate(session.messages):
+        for tool in msg.tools:
+            tool_positions[tool].append(i)
+
+    # Calculate tool distribution across conversation
+    if tool_positions:
+        total_messages = len(session.messages)
+        print(f"  Distribution across {total_messages} messages:")
+        for tool, positions in sorted(tool_positions.items()):
+            # Calculate where in the conversation this tool appears
+            if positions:
+                first_use = min(positions)
+                last_use = max(positions)
+                first_pct = (first_use / total_messages) * 100
+                last_pct = (last_use / total_messages) * 100
+                print(
+                    f"  {tool}: {len(positions)} uses, first at msg #{first_use + 1} ({first_pct:.1f}%), last at msg #{last_use + 1} ({last_pct:.1f}%)"
+                )
+
+    # Find tool sequences (which tools are commonly used together)
+    tool_pairs = Counter()
+    for i in range(len(session.messages) - 1):
+        if session.messages[i].tools and session.messages[i + 1].tools:
+            for tool1 in session.messages[i].tools:
+                for tool2 in session.messages[i + 1].tools:
+                    tool_pairs[(tool1, tool2)] += 1
+
+    if tool_pairs:
+        print("\nCommon tool sequences:")
+        for (tool1, tool2), count in tool_pairs.most_common(3):
+            print(f"  {tool1} → {tool2}: {count} times")
+
+    # Success/failure analysis
+    success_count = 0
+    error_count = 0
+    error_by_tool = Counter()
+
+    # Analyze detailed tool executions
     if session.tool_executions:
-        print(f"\nDetailed tool executions: {len(session.tool_executions)}")
+        print(f"\nAnalyzing {len(session.tool_executions)} tool executions:")
+
+        for execution in session.tool_executions:
+            # Check if the tool execution resulted in an error
+            is_error = hasattr(execution.output, "is_error") and execution.output.is_error
+
+            if is_error:
+                error_count += 1
+                error_by_tool[execution.tool_name] += 1
+            else:
+                success_count += 1
+
+        # Calculate success rate
+        total_executions = success_count + error_count
+        if total_executions > 0:
+            success_rate = (success_count / total_executions) * 100
+            print(f"  Overall success rate: {success_rate:.1f}%")
+            print(f"  Successful executions: {success_count}")
+            print(f"  Failed executions: {error_count}")
+
+            # Show error rates by tool
+            if error_count > 0:
+                print("\nError rates by tool:")
+                for tool in sorted(session.tools_used):
+                    tool_errors = error_by_tool.get(tool, 0)
+                    tool_total = tool_counts.get(tool, 0)
+                    if tool_total > 0:
+                        error_rate = (tool_errors / tool_total) * 100
+                        print(
+                            f"  {tool}: {error_rate:.1f}% error rate ({tool_errors}/{tool_total})"
+                        )
 
         # Show a sample of tool executions
         max_samples = min(3, len(session.tool_executions))
         print(f"\nSample of {max_samples} tool executions:")
 
         for i, execution in enumerate(session.tool_executions[:max_samples]):
-            print(f"\nExecution {i + 1}:")
+            is_error = hasattr(execution.output, "is_error") and execution.output.is_error
+            status = "❌ ERROR" if is_error else "✓ Success"
+
+            print(f"\nExecution {i + 1}: {status}")
             print(f"  Tool: {execution.tool_name}")
-            print(f"  Duration: {execution.duration}")
-            print(f"  Input: {execution.input}")
+            if execution.duration:
+                print(f"  Duration: {execution.duration}")
+
+            # Show a preview of the input
+            input_str = str(execution.input)
+            if len(input_str) > 100:
+                input_str = input_str[:97] + "..."
+            print(f"  Input: {input_str}")
 
             # For most tool executions, show a preview of the output
             if hasattr(execution.output, "content"):
                 content = execution.output.content
-                if content and len(content) > 100:
-                    content = content[:97] + "..."
+                if content and len(str(content)) > 100:
+                    content = str(content)[:97] + "..."
                 print(f"  Output: {content}")
 
-            print(f"  Error: {execution.output.is_error}")
+            if is_error:
+                print(f"  Error: {getattr(execution.output, 'error_type', 'Unknown')}")
 
 
 def main():
