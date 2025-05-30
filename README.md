@@ -1,80 +1,134 @@
 # Claude SDK
 
-> Typed Python wrapper for Claude Code CLI
+> Typed Python SDK for parsing and analyzing Claude Code sessions
 
-A composable, low-level Python library providing rich abstractions over Claude Code's data model and execution capabilities. Designed for building observability systems, pattern recognition, and downstream optimization tools.
+A clean, intuitive interface for working with Claude Code JSONL session files. Designed for CLI-based workflows, the SDK provides a simple API to access messages, analyze costs, and extract structured data from your Claude Code sessions.
 
-## Development Status
+## Features
 
-**Currently in T0 phase: Data Access Foundation**
+- **Simple API**: `session = load("conversation.jsonl")` - that's it!
+- **Session Analysis**: Easily access cost, tool usage, and performance metrics
+- **Message Access**: Clean iteration through conversation messages
+- **Type Safety**: Full typing with Pydantic models and basedpyright --strict
+- **CLI-Friendly**: Rich docstrings with examples for `help()` discovery
+- **Memory Efficient**: Optimized for large session files
 
-This project is in active development. The core data models and parsing infrastructure are being implemented first.
+## Installation
 
-## Core Principles
-
-- **Modern Monolith**: Single package with clean module separation and clear boundaries
-- **Data Access First**: Clean, efficient access to Claude Code's data structures
-- **Type Safety**: Full typing with Pydantic runtime validation and basedpyright --strict
-- **Minimal Abstractions**: Provide data types and parsers, not opinions
-- **Sync-First**: Synchronous API for simplicity (async can be added later)
-- **Robust Error Handling**: Sealed error hierarchy with rich context
-
-## Implementation Phases
-
-### T0: Data Access Foundation (Current)
-- [ ] Claude Code JSONL format parsing with robust error handling
-- [ ] Message threading and conversation reconstruction
-- [ ] Tool usage extraction and correlation
-- [ ] Performance metrics access (cost, timing, token usage)
-- [ ] Raw data structures with zero interpretation
-- [ ] Comprehensive type coverage with basedpyright --strict
-
-### T1: Execution Engine (Next)
-- [ ] Claude binary integration (`--output-format json`)
-- [ ] Session configuration and management
-- [ ] Synchronous subprocess execution with timeout handling
-- [ ] Rich error context and recovery strategies
-- [ ] Command validation and safety checks
-
-### T2: Git Integration (Future)
-- [ ] Git state capture (before/after execution)
-- [ ] Diff analysis and file change tracking
-- [ ] Commit correlation with session outcomes
-
-### T3: MCP Support (Future)
-- [ ] MCP server configuration and management
-- [ ] Tool permission handling
+```bash
+pip install claude-sdk
+```
 
 ## Quick Start
 
-```bash
-# Clone and enter the project
-cd claude-sdk
+```python
+from claude_sdk import load, find_sessions
 
-# Enter development environment (with Nix)
-nix develop
+# Load a session from a JSONL file
+session = load("conversation.jsonl")
 
-# Or set up manually with uv
-uv sync --dev
+# Access session properties
+print(f"Session ID: {session.session_id}")
+print(f"Total cost: ${session.total_cost:.4f}")
+print(f"Tools used: {', '.join(session.tools_used)}")
+print(f"Messages: {len(session.messages)}")
 
-# Run checks
-just check
+# Iterate through messages
+for msg in session.messages:
+    print(f"{msg.role}: {msg.text[:50]}...")  # Show message preview
+    if msg.tools:
+        print(f"  Tools: {', '.join(msg.tools)}")
+    if msg.cost:
+        print(f"  Cost: ${msg.cost:.4f}")
 
-# Run tests
-just test
+# Find all sessions in ~/.claude/projects/
+session_paths = find_sessions()
+print(f"Found {len(session_paths)} sessions")
+
+# Process multiple sessions
+for path in session_paths[:5]:  # First 5 sessions
+    try:
+        session = load(path)
+        print(f"Session {session.session_id}: {len(session.messages)} messages, ${session.total_cost:.4f}")
+    except Exception as e:
+        print(f"Error loading {path}: {e}")
 ```
 
-## Project Structure
+## Key Concepts
 
+### Session Object
+
+The `Session` class is your primary interface to Claude Code session data:
+
+```python
+session = load("conversation.jsonl")
+
+# Core properties
+session.session_id          # Unique session identifier
+session.messages            # List of Message objects
+session.total_cost          # Total session cost in USD
+session.tools_used          # Set of tool names used
+session.duration            # Session duration as timedelta
+
+# Analysis properties
+session.tool_costs          # Cost breakdown by tool
+session.cost_by_turn        # Cost per message turn
+session.tool_executions     # Detailed tool execution records
 ```
-claude_sdk/
-├── __init__.py              # Public API exports
-├── models.py                # Pydantic data models
-├── parser.py                # JSONL parsing and session reconstruction
-├── executor.py              # Claude binary execution
-├── errors.py                # Sealed error hierarchy
-├── utils.py                 # Common utilities
-└── py.typed                 # Type marker file
+
+### Message Object
+
+Each message in a session provides rich information:
+
+```python
+for msg in session.messages:
+    msg.role                # "user" or "assistant"
+    msg.text                # Full message text content
+    msg.cost                # Message cost if available
+    msg.is_sidechain        # True if in a sidechain
+    msg.timestamp           # Message creation time
+    msg.uuid                # Unique message identifier
+    msg.parent_uuid         # Parent message UUID
+    msg.tools               # List of tools used
+```
+
+## Tool Usage Analysis
+
+Analyze tool patterns and costs:
+
+```python
+from claude_sdk import load
+
+session = load("conversation.jsonl")
+
+# Get cost breakdown by tool
+for tool, cost in session.tool_costs.items():
+    print(f"{tool}: ${cost:.4f} USD")
+
+# Analyze Bash tool usage
+bash_commands = []
+for msg in session.messages:
+    if "Bash" in msg.tools:
+        bash_commands.append(msg.text)
+
+print(f"Found {len(bash_commands)} Bash commands")
+```
+
+## Error Handling
+
+The SDK provides a clean error hierarchy:
+
+```python
+from claude_sdk import load, ClaudeSDKError, ParseError
+
+try:
+    session = load("conversation.jsonl")
+except FileNotFoundError:
+    print("Session file not found!")
+except ParseError as e:
+    print(f"Error parsing session: {e}")
+except ClaudeSDKError as e:
+    print(f"General SDK error: {e}")
 ```
 
 ## Development
@@ -85,34 +139,38 @@ This project uses modern Python tooling:
 - **basedpyright** for strict type checking
 - **ruff** for formatting and linting
 - **pytest** for testing
-- **pre-commit** for git hooks
 - **just** for convenient commands
-- **nix** for reproducible development environment
 
-### Available Commands
+### Development Commands
 
 ```bash
-just check          # Run all checks (format, lint, type check, test)
-just fmt             # Format code with ruff
-just lint            # Lint code with ruff
-just typecheck       # Type check with basedpyright
-just test            # Run tests
-just test-cov        # Run tests with coverage
-just clean           # Clean up build artifacts
-just build           # Build package
+# Install dependencies
+just install
+
+# Run all checks
+just check
+
+# Format code
+just fmt
+
+# Type check
+just typecheck
+
+# Run tests
+just test
+
+# Run tests with coverage
+just test-cov
 ```
 
-## Documentation
+## Performance
 
-See `docs/PYTHON_CLAUDE_CODE_SDK_SPECIFICATION.md` for the complete technical specification.
+The SDK is optimized for large session files:
 
-## Usage Examples
-
-*Examples will be added as the implementation progresses*
-
-## Contributing
-
-This project is currently in early development. Please see the specification for implementation details and planned features.
+- Memory-efficient streaming parser for JSONL files
+- Single-pass algorithms for metadata calculation
+- Efficient conversation threading reconstruction
+- Handles sessions with 1000+ messages without excessive memory usage
 
 ## License
 

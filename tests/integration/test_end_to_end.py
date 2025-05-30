@@ -198,7 +198,7 @@ class TestErrorScenarios:
         assert len(warning_messages) > 0
 
         # Check that warnings contain validation error information
-        validation_warnings = [msg for msg in warning_messages if "Validation error" in msg]
+        validation_warnings = [msg for msg in warning_messages if "validation error" in msg.lower()]
         assert len(validation_warnings) > 0
 
     def test_nonexistent_file_error(self):

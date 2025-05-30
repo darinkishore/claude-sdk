@@ -179,4 +179,6 @@ result-*
 ehthumbs.db
 Thumbs.db
 
-# Autonomous development script
+# Autonomous development scripts
+autonomous_dev*.sh
+autonomous_dev*.log

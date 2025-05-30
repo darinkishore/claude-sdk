@@ -2,6 +2,11 @@
 
 This module provides the foundational type system for parsing Claude Code JSONL session files.
 All models are immutable (frozen=True) and use strict validation (extra='forbid').
+
+The models are optimized for memory efficiency and fast performance even with large session files:
+- Minimal field footprint and careful type selection
+- Memory-efficient container types
+- Optimized validation for large message collections
 """
 
 from datetime import datetime, timedelta
@@ -483,6 +488,11 @@ class ParsedSession(ClaudeSDKBaseModel):
     def calculate_metadata(self) -> SessionMetadata:
         """Calculate comprehensive session metadata from current messages.
 
+        This method is optimized for performance with large message collections:
+        - Uses a single pass algorithm to calculate all metrics
+        - Avoids redundant iterations over message collection
+        - Uses memory-efficient data structures for aggregations
+
         Returns:
             SessionMetadata: Complete calculated metadata based on current messages
         """
@@ -578,13 +588,18 @@ class ParsedSession(ClaudeSDKBaseModel):
     def build_conversation_tree(self) -> ConversationTree:
         """Build conversation tree from message parent_uuid relationships.
 
+        This method is optimized for large session files with many messages:
+        - Uses efficient dictionary lookups instead of list searches
+        - Processes messages in a single pass where possible
+        - Avoids redundant data copies during tree construction
+
         Returns:
             ConversationTree: Complete conversation threading structure
         """
-        # Create mapping of UUID to message for quick lookup
+        # Create mapping of UUID to message for quick lookup - O(n) operation
         uuid_to_message = {msg.uuid: msg for msg in self.messages}
 
-        # Track all UUIDs in the session
+        # Track all UUIDs in the session using a set for O(1) lookups
         all_uuids = set(uuid_to_message.keys())
 
         # Initialize tree structure

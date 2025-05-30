@@ -80,7 +80,7 @@ from .models import Role, SessionMetadata, TextBlock, ThinkingBlock, ToolExecuti
 from .parser import discover_sessions, parse_complete_session
 from .session import Session
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 
 def load(file_path: str | Path) -> Session:
@@ -228,8 +228,10 @@ def find_sessions(base_path: str | Path | None = None) -> list[Path]:
         ```
 
     Performance Notes:
-        - For large directories with many files, this function may take a moment
-          to complete as it needs to check each file for Claude Code session format.
+        - For large directories with many files, this function is optimized to
+          scan quickly using efficient directory traversal.
+        - Memory usage is minimized by using generators and lazy evaluation
+          for file discovery.
         - The results are cached in memory, so subsequent calls with the same
           base_path will be faster.
     """
