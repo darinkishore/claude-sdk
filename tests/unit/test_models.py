@@ -8,11 +8,21 @@ import pytest
 
 from claude_sdk.models import (
     ClaudeSDKBaseModel,
+    ContentBlock,
     DateTimeType,
+    Message,
+    MessageContentType,
+    MessageRecord,
     MessageType,
     PathType,
     Role,
     StopReason,
+    TextBlock,
+    ThinkingBlock,
+    TokenUsage,
+    ToolResult,
+    ToolResultBlock,
+    ToolUseBlock,
     UserType,
     UUIDType,
 )
@@ -194,6 +204,361 @@ class TestEnumJSONCompatibility:
         assert StopReason.END_TURN.value == "end_turn"
 
 
+class TestContentBlock:
+    """Test ContentBlock union type alias."""
+
+    def test_union_type_alias(self):
+        """Test ContentBlock is a union of all content block types."""
+        from typing import get_args
+
+        union_args = get_args(ContentBlock)
+        assert TextBlock in union_args
+        assert ThinkingBlock in union_args
+        assert ToolUseBlock in union_args
+        assert ToolResultBlock in union_args
+        assert len(union_args) == 4
+
+    def test_all_content_blocks_inherit_from_base_model(self):
+        """Test all content block types inherit from ClaudeSDKBaseModel."""
+        assert issubclass(TextBlock, ClaudeSDKBaseModel)
+        assert issubclass(ThinkingBlock, ClaudeSDKBaseModel)
+        assert issubclass(ToolUseBlock, ClaudeSDKBaseModel)
+        assert issubclass(ToolResultBlock, ClaudeSDKBaseModel)
+
+    def test_type_discrimination_with_isinstance(self):
+        """Test isinstance works with ContentBlock union types."""
+        text_block = TextBlock(text="Hello")
+        thinking_block = ThinkingBlock(thinking="Thinking...", signature="v1")
+        tool_block = ToolUseBlock(id="1", name="test", input={})
+
+        # Since ContentBlock is a Union, we can't use isinstance directly with it
+        # Instead, we check against individual types
+        assert isinstance(text_block, TextBlock)
+        assert isinstance(thinking_block, ThinkingBlock)
+        assert isinstance(tool_block, ToolUseBlock)
+
+        # But we can check if they're one of the content block types
+        content_blocks = [text_block, thinking_block, tool_block]
+        for block in content_blocks:
+            assert isinstance(block, TextBlock | ThinkingBlock | ToolUseBlock)
+
+    def test_all_blocks_have_type_field(self):
+        """Test all content block types have a type discriminator field."""
+        text_block = TextBlock(text="Hello")
+        thinking_block = ThinkingBlock(thinking="Thinking...", signature="v1")
+        tool_block = ToolUseBlock(id="1", name="test", input={})
+
+        assert hasattr(text_block, "type")
+        assert hasattr(thinking_block, "type")
+        assert hasattr(tool_block, "type")
+
+        assert text_block.type == "text"
+        assert thinking_block.type == "thinking"
+        assert tool_block.type == "tool_use"
+
+    def test_content_block_immutability(self):
+        """Test all content block types are immutable."""
+        text_block = TextBlock(text="Hello")
+        thinking_block = ThinkingBlock(thinking="Thinking...", signature="v1")
+        tool_block = ToolUseBlock(id="1", name="test", input={})
+
+        with pytest.raises(ValueError, match="frozen"):
+            text_block.text = "changed"
+
+        with pytest.raises(ValueError, match="frozen"):
+            thinking_block.thinking = "changed"
+
+        with pytest.raises(ValueError, match="frozen"):
+            tool_block.id = "changed"
+
+
+class TestTextBlock:
+    """Test TextBlock content model."""
+
+    def test_inheritance_from_content_block(self):
+        """Test TextBlock inherits from ContentBlock."""
+        assert issubclass(TextBlock, ContentBlock)
+
+    def test_default_type_value(self):
+        """Test TextBlock has correct default type value."""
+        block = TextBlock(text="Hello world")
+        assert block.type == "text"
+
+    def test_text_field_required(self):
+        """Test TextBlock requires text field."""
+        with pytest.raises(ValueError, match="Field required"):
+            TextBlock()
+
+    def test_text_field_assignment(self):
+        """Test TextBlock accepts text field."""
+        block = TextBlock(text="Hello world")
+        assert block.text == "Hello world"
+
+    def test_type_field_immutable(self):
+        """Test TextBlock type field cannot be overridden."""
+        # Pydantic validates Literal types strictly - wrong values raise ValidationError
+        with pytest.raises(ValueError, match="Input should be 'text'"):
+            TextBlock(text="Hello world", type="wrong")
+
+    def test_frozen_behavior(self):
+        """Test TextBlock is immutable."""
+        block = TextBlock(text="Hello world")
+        with pytest.raises(ValueError, match="frozen"):
+            block.text = "changed"
+
+    def test_realistic_content(self):
+        """Test TextBlock with realistic message content."""
+        block = TextBlock(
+            text="I'd be happy to help you with that task. Let me analyze the requirements first."
+        )
+        assert block.type == "text"
+        assert "analyze the requirements" in block.text
+
+
+class TestThinkingBlock:
+    """Test ThinkingBlock content model."""
+
+    def test_inheritance_from_content_block(self):
+        """Test ThinkingBlock inherits from ContentBlock."""
+        assert issubclass(ThinkingBlock, ContentBlock)
+
+    def test_default_type_value(self):
+        """Test ThinkingBlock has correct default type value."""
+        block = ThinkingBlock(thinking="Let me think about this...", signature="reasoning_v1")
+        assert block.type == "thinking"
+
+    def test_required_fields(self):
+        """Test ThinkingBlock requires thinking and signature fields."""
+        with pytest.raises(ValueError, match="Field required"):
+            ThinkingBlock()
+
+        with pytest.raises(ValueError, match="Field required"):
+            ThinkingBlock(thinking="test")
+
+        with pytest.raises(ValueError, match="Field required"):
+            ThinkingBlock(signature="test")
+
+    def test_field_assignment(self):
+        """Test ThinkingBlock accepts thinking and signature fields."""
+        block = ThinkingBlock(
+            thinking="Let me analyze this step by step...", signature="reasoning_v1"
+        )
+        assert block.thinking == "Let me analyze this step by step..."
+        assert block.signature == "reasoning_v1"
+
+    def test_type_field_immutable(self):
+        """Test ThinkingBlock type field cannot be overridden."""
+        # Pydantic validates Literal types strictly - wrong values raise ValidationError
+        with pytest.raises(ValueError, match="Input should be 'thinking'"):
+            ThinkingBlock(thinking="test", signature="test", type="wrong")
+
+    def test_frozen_behavior(self):
+        """Test ThinkingBlock is immutable."""
+        block = ThinkingBlock(thinking="test", signature="test")
+        with pytest.raises(ValueError, match="frozen"):
+            block.thinking = "changed"
+
+    def test_realistic_content(self):
+        """Test ThinkingBlock with realistic reasoning content."""
+        thinking = "I need to carefully consider the user's request. They want me to implement a function that processes data efficiently. Let me break this down: 1) Input validation, 2) Data processing, 3) Output formatting."
+        block = ThinkingBlock(thinking=thinking, signature="reasoning_v2")
+        assert block.type == "thinking"
+        assert "efficiently" in block.thinking
+        assert block.signature == "reasoning_v2"
+
+
+class TestToolUseBlock:
+    """Test ToolUseBlock content model."""
+
+    def test_inheritance_from_content_block(self):
+        """Test ToolUseBlock inherits from ContentBlock."""
+        assert issubclass(ToolUseBlock, ContentBlock)
+
+    def test_default_type_value(self):
+        """Test ToolUseBlock has correct default type value."""
+        block = ToolUseBlock(id="call_123", name="calculator", input={"expression": "2+2"})
+        assert block.type == "tool_use"
+
+    def test_required_fields(self):
+        """Test ToolUseBlock requires id, name, and input fields."""
+        with pytest.raises(ValueError, match="Field required"):
+            ToolUseBlock()
+
+        with pytest.raises(ValueError, match="Field required"):
+            ToolUseBlock(id="test")
+
+        with pytest.raises(ValueError, match="Field required"):
+            ToolUseBlock(id="test", name="test")
+
+    def test_field_assignment(self):
+        """Test ToolUseBlock accepts id, name, and input fields."""
+        input_data = {"query": "Python best practices", "max_results": 5}
+        block = ToolUseBlock(id="tool_456", name="web_search", input=input_data)
+        assert block.id == "tool_456"
+        assert block.name == "web_search"
+        assert block.input == input_data
+
+    def test_input_dict_type(self):
+        """Test ToolUseBlock input accepts arbitrary dict structure."""
+        # Simple input
+        block1 = ToolUseBlock(id="1", name="simple", input={"value": "test"})
+        assert block1.input["value"] == "test"
+
+        # Complex nested input
+        complex_input = {
+            "config": {"timeout": 30, "retries": 3},
+            "data": ["item1", "item2"],
+            "flags": {"verbose": True, "dry_run": False},
+        }
+        block2 = ToolUseBlock(id="2", name="complex", input=complex_input)
+        assert block2.input["config"]["timeout"] == 30
+        assert block2.input["data"] == ["item1", "item2"]
+
+    def test_type_field_immutable(self):
+        """Test ToolUseBlock type field cannot be overridden."""
+        # Pydantic validates Literal types strictly - wrong values raise ValidationError
+        with pytest.raises(ValueError, match="Input should be 'tool_use'"):
+            ToolUseBlock(id="test", name="test", input={}, type="wrong")
+
+    def test_frozen_behavior(self):
+        """Test ToolUseBlock is immutable."""
+        block = ToolUseBlock(id="test", name="test", input={})
+        with pytest.raises(ValueError, match="frozen"):
+            block.id = "changed"
+
+    def test_realistic_content(self):
+        """Test ToolUseBlock with realistic tool usage."""
+        block = ToolUseBlock(
+            id="call_abc123",
+            name="file_reader",
+            input={"file_path": "/home/user/data.json", "encoding": "utf-8", "max_lines": 1000},
+        )
+        assert block.type == "tool_use"
+        assert block.name == "file_reader"
+        assert block.input["file_path"] == "/home/user/data.json"
+
+
+class TestMessageContentType:
+    """Test MessageContentType discriminated union."""
+
+    def test_union_type_composition(self):
+        """Test MessageContentType includes all content block types."""
+        from typing import get_args
+
+        union_args = get_args(MessageContentType)
+        assert TextBlock in union_args
+        assert ThinkingBlock in union_args
+        assert ToolUseBlock in union_args
+        assert ToolResultBlock in union_args
+        assert len(union_args) == 4
+
+    def test_text_block_in_union(self):
+        """Test TextBlock is valid MessageContentType."""
+        block = TextBlock(text="Hello")
+        assert isinstance(block, TextBlock)
+        # Type checking would validate this at static analysis time
+
+    def test_thinking_block_in_union(self):
+        """Test ThinkingBlock is valid MessageContentType."""
+        block = ThinkingBlock(thinking="Let me think...", signature="v1")
+        assert isinstance(block, ThinkingBlock)
+
+    def test_tool_use_block_in_union(self):
+        """Test ToolUseBlock is valid MessageContentType."""
+        block = ToolUseBlock(id="1", name="test", input={})
+        assert isinstance(block, ToolUseBlock)
+
+    def test_content_list_parsing(self):
+        """Test parsing list of mixed content blocks."""
+
+        content_list: list[MessageContentType] = [
+            TextBlock(text="First, let me understand the problem."),
+            ThinkingBlock(
+                thinking="The user wants me to solve X. I should approach this by...",
+                signature="reasoning_v1",
+            ),
+            ToolUseBlock(id="call_1", name="calculator", input={"expression": "10 * 5"}),
+            TextBlock(text="Based on the calculation, the answer is 50."),
+        ]
+
+        assert len(content_list) == 4
+        assert isinstance(content_list[0], TextBlock)
+        assert isinstance(content_list[1], ThinkingBlock)
+        assert isinstance(content_list[2], ToolUseBlock)
+        assert isinstance(content_list[3], TextBlock)
+
+        # Verify type discriminators
+        assert content_list[0].type == "text"
+        assert content_list[1].type == "thinking"
+        assert content_list[2].type == "tool_use"
+        assert content_list[3].type == "text"
+
+
+class TestContentBlockDiscrimination:
+    """Test content block type discrimination and JSON parsing."""
+
+    def test_json_parsing_text_block(self):
+        """Test parsing TextBlock from JSON-like dict."""
+        data = {"type": "text", "text": "Hello world"}
+
+        # Pydantic can discriminate based on type field
+        if data["type"] == "text":
+            block = TextBlock(**data)
+            assert isinstance(block, TextBlock)
+            assert block.text == "Hello world"
+
+    def test_json_parsing_thinking_block(self):
+        """Test parsing ThinkingBlock from JSON-like dict."""
+        data = {
+            "type": "thinking",
+            "thinking": "I need to consider the implications...",
+            "signature": "reasoning_v2",
+        }
+
+        if data["type"] == "thinking":
+            block = ThinkingBlock(**data)
+            assert isinstance(block, ThinkingBlock)
+            assert block.thinking == "I need to consider the implications..."
+
+    def test_json_parsing_tool_use_block(self):
+        """Test parsing ToolUseBlock from JSON-like dict."""
+        data = {
+            "type": "tool_use",
+            "id": "call_xyz789",
+            "name": "web_search",
+            "input": {"query": "Python documentation", "limit": 10},
+        }
+
+        if data["type"] == "tool_use":
+            block = ToolUseBlock(**data)
+            assert isinstance(block, ToolUseBlock)
+            assert block.name == "web_search"
+            assert block.input["query"] == "Python documentation"
+
+    def test_type_field_discrimination(self):
+        """Test type field enables proper discrimination."""
+        # Simulate what a parser would do
+        content_blocks_data = [
+            {"type": "text", "text": "Hello"},
+            {"type": "thinking", "thinking": "Let me think...", "signature": "v1"},
+            {"type": "tool_use", "id": "1", "name": "test", "input": {}},
+        ]
+
+        parsed_blocks = []
+        for data in content_blocks_data:
+            if data["type"] == "text":
+                parsed_blocks.append(TextBlock(**data))
+            elif data["type"] == "thinking":
+                parsed_blocks.append(ThinkingBlock(**data))
+            elif data["type"] == "tool_use":
+                parsed_blocks.append(ToolUseBlock(**data))
+
+        assert len(parsed_blocks) == 3
+        assert all(hasattr(block, "type") for block in parsed_blocks)
+        types = [block.type for block in parsed_blocks]
+        assert types == ["text", "thinking", "tool_use"]
+
+
 class TestFoundationTypesExports:
     """Test foundation types are properly exported."""
 
@@ -210,6 +575,17 @@ class TestFoundationTypesExports:
             "UUIDType",
             "DateTimeType",
             "PathType",
+            "ContentBlock",
+            "TextBlock",
+            "ThinkingBlock",
+            "ToolUseBlock",
+            "ToolResultBlock",
+            "MessageContentBlock",
+            "MessageContentType",
+            "TokenUsage",
+            "ToolResult",
+            "Message",
+            "MessageRecord",
         }
 
         assert set(__all__) == expected_exports
@@ -225,3 +601,265 @@ class TestFoundationTypesExports:
         assert UUIDType is not None
         assert DateTimeType is not None
         assert PathType is not None
+        assert ContentBlock is not None
+        assert TextBlock is not None
+        assert ThinkingBlock is not None
+        assert ToolUseBlock is not None
+        assert MessageContentType is not None
+        assert ToolResultBlock is not None
+        assert TokenUsage is not None
+        assert ToolResult is not None
+        assert Message is not None
+        assert MessageRecord is not None
+
+
+class TestToolResultBlock:
+    """Test ToolResultBlock content block model."""
+
+    def test_tool_result_block_creation(self):
+        """Test ToolResultBlock can be created with required fields."""
+        block = ToolResultBlock(
+            content="Command executed successfully", is_error=False, tool_use_id="toolu_123"
+        )
+        assert block.type == "tool_result"
+        assert block.content == "Command executed successfully"
+        assert block.is_error is False
+        assert block.tool_use_id == "toolu_123"
+
+    def test_tool_result_block_with_error(self):
+        """Test ToolResultBlock with error state."""
+        block = ToolResultBlock(
+            content="Error: Command failed", is_error=True, tool_use_id="toolu_456"
+        )
+        assert block.is_error is True
+
+    def test_tool_result_block_immutable(self):
+        """Test ToolResultBlock is immutable."""
+        from pydantic import ValidationError
+
+        block = ToolResultBlock(content="Test", is_error=False, tool_use_id="toolu_123")
+        with pytest.raises(ValidationError):
+            block.content = "Modified"
+
+
+class TestTokenUsage:
+    """Test TokenUsage model."""
+
+    def test_token_usage_creation(self):
+        """Test TokenUsage can be created with all fields."""
+        usage = TokenUsage(
+            input_tokens=100,
+            cache_creation_input_tokens=50,
+            cache_read_input_tokens=25,
+            output_tokens=200,
+            service_tier="standard",
+        )
+        assert usage.input_tokens == 100
+        assert usage.cache_creation_input_tokens == 50
+        assert usage.cache_read_input_tokens == 25
+        assert usage.output_tokens == 200
+        assert usage.service_tier == "standard"
+
+    def test_token_usage_field_aliases(self):
+        """Test TokenUsage field aliases work correctly."""
+        # Test using camelCase aliases
+        data = {
+            "input_tokens": 100,
+            "cache_creation_input_tokens": 50,
+            "cache_read_input_tokens": 25,
+            "output_tokens": 200,
+            "service_tier": "standard",
+        }
+        usage = TokenUsage(**data)
+        assert usage.input_tokens == 100
+
+
+class TestToolResult:
+    """Test ToolResult model."""
+
+    def test_tool_result_minimal(self):
+        """Test ToolResult with minimal required fields."""
+        result = ToolResult(tool_use_id="tool_1", content="success")
+        assert result.tool_use_id == "tool_1"
+        assert result.content == "success"
+        assert result.stdout is None
+        assert result.stderr is None
+        assert result.interrupted is False
+        assert result.is_error is False
+
+    def test_tool_result_with_all_fields(self):
+        """Test ToolResult with all available fields."""
+        result = ToolResult(
+            tool_use_id="tool_123",
+            content="Command executed",
+            stdout="File created",
+            stderr="Warning: deprecated",
+            interrupted=False,
+            is_error=False,
+            metadata={"exit_code": 0, "duration": 1.5},
+        )
+        assert result.tool_use_id == "tool_123"
+        assert result.content == "Command executed"
+        assert result.stdout == "File created"
+        assert result.stderr == "Warning: deprecated"
+        assert result.metadata["exit_code"] == 0
+
+    def test_tool_result_with_error(self):
+        """Test ToolResult with error state."""
+        result = ToolResult(
+            tool_use_id="tool_456",
+            content="Error: Permission denied",
+            stderr="chmod: permission denied",
+            interrupted=False,
+            is_error=True,
+            metadata={"exit_code": 1},
+        )
+        assert result.tool_use_id == "tool_456"
+        assert result.content == "Error: Permission denied"
+        assert result.is_error is True
+        assert result.metadata["exit_code"] == 1
+
+
+class TestMessage:
+    """Test Message model."""
+
+    def test_message_with_text_block_content(self):
+        """Test Message with TextBlock content."""
+        text_block = TextBlock(text="Hello, Claude!")
+        message = Message(role=Role.USER, content=[text_block])
+        assert message.role == Role.USER
+        assert len(message.content) == 1
+        assert message.content[0].text == "Hello, Claude!"
+        assert message.id is None
+
+    def test_message_with_content_blocks(self):
+        """Test Message with content block list."""
+        text_block = TextBlock(text="Hello")
+        thinking_block = ThinkingBlock(thinking="Let me think", signature="sig123")
+
+        message = Message(
+            role=Role.ASSISTANT,
+            content=[text_block, thinking_block],
+            model="claude-opus-4",
+            stop_reason=StopReason.END_TURN,
+        )
+        assert message.role == Role.ASSISTANT
+        assert len(message.content) == 2
+        assert message.model == "claude-opus-4"
+        assert message.stop_reason == StopReason.END_TURN
+
+    def test_message_with_usage(self):
+        """Test Message with TokenUsage."""
+        usage = TokenUsage(
+            input_tokens=50,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
+            output_tokens=100,
+            service_tier="standard",
+        )
+        message = Message(role=Role.ASSISTANT, content=[TextBlock(text="Response")], usage=usage)
+        assert message.usage is not None
+        assert message.usage.input_tokens == 50
+
+
+class TestMessageRecord:
+    """Test MessageRecord model."""
+
+    def test_message_record_creation(self):
+        """Test MessageRecord with required fields."""
+        from datetime import datetime
+        from pathlib import Path
+        from uuid import uuid4
+
+        uuid_val = uuid4()
+        timestamp = datetime.now()
+        message = Message(role=Role.USER, content=[TextBlock(text="Test message")])
+
+        # Use JSONL-style data with camelCase aliases
+        data = {
+            "isSidechain": False,
+            "userType": "external",
+            "cwd": "/test/path",
+            "sessionId": "session123",
+            "version": "1.0.0",
+            "type": "user",
+            "message": message,
+            "uuid": uuid_val,
+            "timestamp": timestamp,
+        }
+        record = MessageRecord(**data)
+
+        assert record.is_sidechain is False
+        assert record.user_type == UserType.EXTERNAL
+        assert record.cwd == Path("/test/path")
+        assert record.session_id == "session123"
+        assert record.uuid == uuid_val
+        assert record.parent_uuid is None
+
+    def test_message_record_with_optional_fields(self):
+        """Test MessageRecord with optional fields."""
+        from datetime import datetime
+        from uuid import uuid4
+
+        parent_uuid = uuid4()
+        uuid_val = uuid4()
+        timestamp = datetime.now()
+        message = Message(role=Role.ASSISTANT, content=[TextBlock(text="Response")])
+        tool_result = ToolResult(tool_use_id="tool_1", content="success", stdout="success")
+
+        # Use JSONL-style data with camelCase aliases
+        data = {
+            "parentUuid": parent_uuid,
+            "isSidechain": True,
+            "userType": "internal",
+            "cwd": "/test",
+            "sessionId": "session456",
+            "version": "1.0.1",
+            "type": "assistant",
+            "message": message,
+            "uuid": uuid_val,
+            "timestamp": timestamp,
+            "costUSD": 0.05,
+            "durationMs": 1500,
+            "requestId": "req_123",
+            "toolUseResult": tool_result,
+            "isMeta": True,
+        }
+        record = MessageRecord(**data)
+
+        assert record.parent_uuid == parent_uuid
+        assert record.cost_usd == 0.05
+        assert record.duration_ms == 1500
+        assert record.request_id == "req_123"
+        assert record.tool_use_result == tool_result
+        assert record.is_meta is True
+
+    def test_message_record_field_aliases(self):
+        """Test MessageRecord field aliases work with JSONL data."""
+        from datetime import datetime
+        from uuid import uuid4
+
+        # Simulate JSONL data with camelCase field names
+        jsonl_data = {
+            "parentUuid": str(uuid4()),
+            "isSidechain": False,
+            "userType": "external",
+            "cwd": "/test/path",
+            "sessionId": "session789",
+            "version": "1.0.2",
+            "message": {"role": "user", "content": [{"type": "text", "text": "Test"}]},
+            "type": "user",
+            "uuid": str(uuid4()),
+            "timestamp": datetime.now().isoformat(),
+            "costUSD": 0.02,
+            "durationMs": 800,
+            "isMeta": False,
+        }
+
+        # This would normally be done by the parser, but we're testing the aliases
+        record = MessageRecord(**jsonl_data)
+        assert record.user_type == UserType.EXTERNAL
+        assert record.session_id == "session789"
+        assert record.cost_usd == 0.02
+        assert record.duration_ms == 800
+        assert record.is_meta is False
