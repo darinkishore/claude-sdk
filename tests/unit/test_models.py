@@ -17,6 +17,7 @@ from claude_sdk.models import (
     MessageType,
     ParsedSession,
     PathType,
+    Project,
     Role,
     SessionMetadata,
     StopReason,
@@ -594,6 +595,7 @@ class TestFoundationTypesExports:
             "ToolExecution",
             "ConversationTree",
             "ParsedSession",
+            "Project",
         }
 
         assert set(__all__) == expected_exports
@@ -607,6 +609,7 @@ class TestFoundationTypesExports:
         assert StopReason is not None
         assert ClaudeSDKBaseModel is not None
         assert UUIDType is not None
+        assert Project is not None
         assert DateTimeType is not None
         assert PathType is not None
         assert ContentBlock is not None

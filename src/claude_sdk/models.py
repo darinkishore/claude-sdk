@@ -17,6 +17,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt
 
+from .utils import decode_project_path, encode_project_path, extract_project_name
+
 # Type aliases for common types
 UUIDType = UUID
 DateTimeType = datetime
@@ -795,6 +797,207 @@ MessageContentBlock = TextBlock | ThinkingBlock | ToolUseBlock
 MessageContentType = TextBlock | ThinkingBlock | ToolUseBlock | ToolResultBlock
 
 
+class Project(ClaudeSDKBaseModel):
+    """Project model that aggregates Claude Code sessions within a project directory.
+
+    This model represents a Claude Code project, which is a collection of sessions
+    associated with a specific project directory. It provides project-level
+    aggregations and utilities for analyzing session data across an entire project.
+
+    Claude Code encodes project paths as directory names in its projects directory:
+    - `/Users/darin/Projects/apply-model` → `-Users-darin-Projects-apply-model`
+    - `/Users/darin/.claude` → `-Users-darin--claude`
+
+    The Project model provides aggregated analytics including:
+    - Total cost across all sessions
+    - Tool usage patterns
+    - Session counts and temporal distribution
+
+    Attributes:
+        project_id: Encoded directory name (e.g., "-Users-darin-Projects-apply-model")
+        project_path: Decoded filesystem path (e.g., "/Users/darin/Projects/apply-model")
+        name: Display name for the project (e.g., "apply-model")
+        sessions: List of Session objects belonging to this project
+
+    Properties:
+        total_cost: Sum of session.total_cost across all sessions
+        tools_used: Set of tool names used across all sessions
+        total_sessions: Number of sessions in the project
+        first_session_date: Timestamp of the earliest session
+        last_session_date: Timestamp of the most recent session
+        total_duration: Total duration from first to last session
+    """
+
+    project_id: str = Field(
+        description="Encoded directory name (e.g., '-Users-darin-Projects-apply-model')"
+    )
+    project_path: Path = Field(
+        description="Decoded filesystem path (e.g., '/Users/darin/Projects/apply-model')"
+    )
+    name: str = Field(description="Display name for the project (e.g., 'apply-model')")
+    sessions: list["ParsedSession"] = Field(
+        default_factory=list, description="Sessions belonging to this project"
+    )
+
+    @property
+    def total_cost(self) -> float:
+        """Total cost of all sessions in the project in USD.
+
+        Aggregates the total_cost of all sessions in the project.
+
+        Returns:
+            float: Sum of all session costs
+        """
+        return sum(session.metadata.total_cost for session in self.sessions)
+
+    @property
+    def tools_used(self) -> set[str]:
+        """Set of all tool names used across all sessions in the project.
+
+        Returns:
+            Set[str]: Union of tools_used across all sessions
+        """
+        return {tool for session in self.sessions for tool in session.metadata.tool_usage_count}
+
+    @property
+    def total_sessions(self) -> int:
+        """Number of sessions in the project.
+
+        Returns:
+            int: Count of sessions
+        """
+        return len(self.sessions)
+
+    @property
+    def first_session_date(self) -> datetime | None:
+        """Timestamp of the earliest session in the project.
+
+        Returns:
+            Optional[datetime]: Earliest session timestamp, or None if no sessions
+        """
+        if not self.sessions:
+            return None
+
+        return min(
+            (
+                session.metadata.session_start
+                for session in self.sessions
+                if session.metadata.session_start
+            ),
+            default=None,
+        )
+
+    @property
+    def last_session_date(self) -> datetime | None:
+        """Timestamp of the most recent session in the project.
+
+        Returns:
+            Optional[datetime]: Latest session timestamp, or None if no sessions
+        """
+        if not self.sessions:
+            return None
+
+        return max(
+            (
+                session.metadata.session_end
+                for session in self.sessions
+                if session.metadata.session_end
+            ),
+            default=None,
+        )
+
+    @property
+    def total_duration(self) -> timedelta | None:
+        """Total time span from first to last session in the project.
+
+        Returns:
+            Optional[timedelta]: Duration from first to last session, or None if insufficient data
+        """
+        first = self.first_session_date
+        last = self.last_session_date
+
+        if first and last:
+            return last - first
+
+        return None
+
+    @property
+    def tool_usage_count(self) -> dict[str, int]:
+        """Aggregated tool usage count across all sessions.
+
+        Returns:
+            Dict[str, int]: Mapping of tool names to usage counts
+        """
+        counts: dict[str, int] = {}
+
+        for session in self.sessions:
+            for tool, count in session.metadata.tool_usage_count.items():
+                counts[tool] = counts.get(tool, 0) + count
+
+        return counts
+
+    @classmethod
+    def from_directory(cls, project_dir: Path) -> "Project":
+        """Create a Project from a Claude Code project directory.
+
+        This method scans a Claude Code project directory for session files
+        and creates a Project instance containing all sessions found.
+
+        Args:
+            project_dir: Path to the Claude Code project directory
+
+        Returns:
+            Project: Project instance with all sessions loaded
+
+        Raises:
+            ValueError: If the directory doesn't exist or doesn't contain session files
+        """
+        if not project_dir.exists():
+            raise ValueError(f"Project directory does not exist: {project_dir}")
+
+        if not project_dir.is_dir():
+            raise ValueError(f"Not a directory: {project_dir}")
+
+        # Get encoded project ID from directory name
+        project_id = encode_project_path(project_dir)
+
+        # Create project without sessions (will add them later)
+        project = cls(
+            project_id=project_id, project_path=project_dir, name=extract_project_name(project_dir)
+        )
+
+        # Load will be implemented later (depends on parser.py)
+        # This is a placeholder for the implementation
+        # sessions = load_sessions_from_directory(project_dir)
+        # project.sessions = sessions
+
+        return project
+
+    @classmethod
+    def from_encoded_id(cls, project_id: str) -> "Project":
+        """Create a Project from an encoded project ID.
+
+        This method creates a Project instance from an encoded project ID,
+        which is the name of the project directory in Claude Code's projects directory.
+
+        Args:
+            project_id: Encoded project ID (e.g., "-Users-darin-Projects-apply-model")
+
+        Returns:
+            Project: Project instance with the specified project ID
+
+        Raises:
+            ValueError: If the project ID is invalid
+        """
+        # Decode project ID to get filesystem path
+        project_path = decode_project_path(project_id)
+
+        # Extract project name
+        name = extract_project_name(project_path)
+
+        return cls(project_id=project_id, project_path=project_path, name=name)
+
+
 # Export all foundation types for public API
 __all__ = [
     "ClaudeSDKBaseModel",
@@ -808,6 +1011,7 @@ __all__ = [
     "MessageType",
     "ParsedSession",
     "PathType",
+    "Project",
     "Role",
     "SessionMetadata",
     "StopReason",
