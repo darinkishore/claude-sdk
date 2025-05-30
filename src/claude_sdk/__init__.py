@@ -76,8 +76,27 @@ from pathlib import Path
 
 from .errors import ClaudeSDKError, ParseError
 from .message import Message
-from .models import Role, SessionMetadata, TextBlock, ThinkingBlock, ToolExecution, ToolUseBlock
-from .parser import discover_sessions, parse_complete_session
+from .models import (
+    Project,
+    Role,
+    SessionMetadata,
+    TextBlock,
+    ThinkingBlock,
+    ToolExecution,
+    ToolUseBlock,
+)
+from .parser import (
+    find_projects as _find_projects,
+)
+from .parser import (
+    find_sessions as _find_sessions,
+)
+from .parser import (
+    load_project as _load_project,
+)
+from .parser import (
+    parse_complete_session,
+)
 from .session import Session
 
 __version__ = "1.0.0"
@@ -164,22 +183,22 @@ def load(file_path: str | Path) -> Session:
     return Session.from_parsed_session(parsed_session)
 
 
-def find_sessions(base_path: str | Path | None = None) -> list[Path]:
-    """Find Claude Code session files in a directory.
+def find_projects(base_path: str | Path | None = None) -> list[Path]:
+    """Find Claude Code project directories.
 
-    This function discovers all Claude Code JSONL session files in the specified
-    directory or in the default ~/.claude/projects/ directory. It identifies valid
-    Claude Code session files by their .jsonl extension and content structure.
+    This function discovers all Claude Code project directories in the specified
+    base directory or in the default ~/.claude/projects/ directory. Project
+    directories contain JSONL session files for a specific project.
 
     Args:
-        base_path: Directory to search for session files. If not provided,
-                   defaults to ~/.claude/projects/. Can be a string path or
-                   a Path object.
+        base_path: Directory to search for project directories. If not provided,
+                 defaults to ~/.claude/projects/. Can be a string path or
+                 a Path object.
 
     Returns:
-        List[Path]: List of paths to JSONL session files, sorted by modification
-                    time (most recent first). The paths are absolute and can be
-                    directly passed to the load() function.
+        List[Path]: List of paths to project directories, sorted by modification
+                  time (most recent first). The paths are absolute and can be
+                  directly passed to the load_project() function.
 
     Raises:
         ParseError: If the directory doesn't exist or can't be accessed
@@ -188,7 +207,144 @@ def find_sessions(base_path: str | Path | None = None) -> list[Path]:
 
     Example:
         ```python
-        from claude_sdk import find_sessions, load
+        from claude_sdk import find_projects, load_project
+
+        # Find all projects
+        project_paths = find_projects()
+        print(f"Found {len(project_paths)} projects")
+
+        # Show project names
+        for path in project_paths[:5]:  # Show 5 most recent
+            print(f"Project: {path.name}")
+
+        # Load the most recent project
+        if project_paths:
+            project = load_project(project_paths[0])
+            print(f"Project: {project.name}")
+            print(f"Sessions: {len(project.sessions)}")
+            print(f"Total cost: ${project.total_cost:.4f}")
+        ```
+
+    CLI Usage:
+        In Claude Code CLI context, you'll typically use this to find projects:
+        ```python
+        from claude_sdk import find_projects
+
+        # List available projects
+        paths = find_projects()
+        for i, path in enumerate(paths[:5]):  # Show 5 most recent
+            print(f"{i+1}. {path.name}")
+
+        # Get project names for selection
+        project_paths = find_projects()
+        project_names = [path.name for path in project_paths]
+        print("Available projects:")
+        for i, name in enumerate(project_names):
+            print(f"{i+1}. {name}")
+        ```
+    """
+    # Convert string path to Path object if needed
+    if base_path is not None and isinstance(base_path, str):
+        base_path = Path(base_path)
+
+    return _find_projects(base_path)
+
+
+def load_project(project_identifier: str | Path, base_path: str | Path | None = None) -> Project:
+    """Load a Claude Code project by name or path.
+
+    This function loads a Claude Code project, either by name (e.g., 'apply-model')
+    or by full path. It discovers all session files in the project directory and
+    loads them into a Project object.
+
+    Args:
+        project_identifier: Project name (e.g., 'apply-model') or full path
+        base_path: Base directory to search in (defaults to ~/.claude/projects/)
+
+    Returns:
+        Project: Project object with all sessions loaded
+
+    Raises:
+        ParseError: If project cannot be found or sessions cannot be loaded
+
+    Example:
+        ```python
+        from claude_sdk import load_project
+
+        # Load by project name
+        project = load_project("apply-model")
+        print(f"Project: {project.name}")
+        print(f"Sessions: {len(project.sessions)}")
+        print(f"Total cost: ${project.total_cost:.4f}")
+
+        # Load by path
+        project = load_project("/Users/username/.claude/projects/-Users-username-Projects-apply-model")
+
+        # Analyze tools used
+        for tool, count in project.tool_usage_count.items():
+            print(f"{tool}: {count} uses")
+
+        # Get project duration
+        if project.total_duration:
+            days = project.total_duration.days
+            print(f"Project duration: {days} days")
+        ```
+
+    CLI Usage:
+        In Claude Code CLI context, you'll typically use this to analyze projects:
+        ```python
+        from claude_sdk import find_projects, load_project
+
+        # Find and load specific project
+        paths = find_projects()
+        if paths:
+            for i, path in enumerate(paths):
+                if "apply-model" in str(path):
+                    project = load_project(path)
+                    print(f"Project: {project.name}")
+                    print(f"Sessions: {len(project.sessions)}")
+                    print(f"Total cost: ${project.total_cost:.4f}")
+                    break
+        ```
+    """
+    # Convert string path to Path object if needed
+    if base_path is not None and isinstance(base_path, str):
+        base_path = Path(base_path)
+
+    # If project_identifier is a string path, convert to Path
+    if isinstance(project_identifier, str) and "/" in project_identifier:
+        project_identifier = Path(project_identifier)
+
+    return _load_project(project_identifier, base_path)
+
+
+def find_sessions(
+    base_path: str | Path | None = None, project: str | Path | None = None
+) -> list[Path]:
+    """Find Claude Code session files, optionally filtered by project.
+
+    This function discovers all Claude Code JSONL session files, either in the
+    specified base directory or filtered to a specific project. It enhances the
+    existing discover_sessions function with project filtering capabilities.
+
+    Args:
+        base_path: Directory to search for session files. If not provided,
+                 defaults to ~/.claude/projects/.
+        project: Optional project identifier (name or path) to filter sessions by.
+
+    Returns:
+        List[Path]: List of paths to JSONL session files, sorted by modification
+                  time (most recent first). The paths are absolute and can be
+                  directly passed to the load() function.
+
+    Raises:
+        ParseError: If the directory doesn't exist or can't be accessed
+        FileNotFoundError: If the specified directory does not exist
+        PermissionError: If the directory can't be accessed due to permissions
+
+    Example:
+        ```python
+        from claude_sdk import find_sessions, load, find_projects
 
         # Basic usage - find all sessions in default directory (~/.claude/projects/)
         session_paths = find_sessions()
@@ -197,14 +353,19 @@ def find_sessions(base_path: str | Path | None = None) -> list[Path]:
         # Find sessions in a specific directory
         session_paths = find_sessions("/path/to/sessions")
 
+        # Find sessions for a specific project
+        project_sessions = find_sessions(project="apply-model")
+        print(f"Found {len(project_sessions)} sessions in 'apply-model' project")
+
         # Load the most recent session
         if session_paths:
             latest_session = load(session_paths[0])  # First is most recent
             print(f"Latest session: {latest_session.session_id}")
+            print(f"Project: {latest_session.project_name}")
             print(f"Session date: {latest_session.messages[0].timestamp}")
 
-        # Process all sessions in a directory
-        for path in session_paths:
+        # Process all sessions in a project
+        for path in find_sessions(project="apply-model"):
             try:
                 session = load(path)
                 print(f"Session {session.session_id}: {len(session.messages)} messages")
@@ -215,16 +376,16 @@ def find_sessions(base_path: str | Path | None = None) -> list[Path]:
     CLI Usage:
         In Claude Code CLI context, you'll typically use this to find sessions:
         ```python
-        from claude_sdk import find_sessions
+        from claude_sdk import find_sessions, find_projects
 
         # List recent sessions
         paths = find_sessions()
         for i, path in enumerate(paths[:5]):  # Show 5 most recent
             print(f"{i+1}. {path.name}")
 
-        # Find sessions in specific project directory
-        proj_dir = "/Users/username/.claude/projects/my_project"
-        proj_sessions = find_sessions(proj_dir)
+        # Find sessions in specific project
+        project_sessions = find_sessions(project="apply-model")
+        print(f"Found {len(project_sessions)} sessions in apply-model project")
         ```
 
     Performance Notes:
@@ -234,13 +395,18 @@ def find_sessions(base_path: str | Path | None = None) -> list[Path]:
           for file discovery.
         - The results are cached in memory, so subsequent calls with the same
           base_path will be faster.
+        - Using the project filter is much faster than scanning all sessions when
+          you only need sessions from a specific project.
     """
     # Convert string path to Path object if needed
     if base_path is not None and isinstance(base_path, str):
         base_path = Path(base_path)
 
-    # Use the internal discover_sessions function
-    return discover_sessions(base_path)
+    # If project is a string path, convert to Path
+    if isinstance(project, str) and "/" in project:
+        project = Path(project)
+
+    return _find_sessions(base_path, project)
 
 
 # Type exports for static analysis
@@ -249,9 +415,10 @@ __all__ = [
     "ClaudeSDKError",
     "Message",
     "ParseError",
+    # Main classes
+    "Project",
     # Common model types
     "Role",
-    # Main classes
     "Session",
     "SessionMetadata",
     "TextBlock",
@@ -260,7 +427,10 @@ __all__ = [
     "ToolUseBlock",
     # Version
     "__version__",
+    # Project-level functions
+    "find_projects",
+    # Session-level functions
     "find_sessions",
-    # Core functions
     "load",
+    "load_project",
 ]

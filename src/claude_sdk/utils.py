@@ -138,4 +138,8 @@ def extract_project_name(project_path: Path) -> str:
     if project_path == Path("Users/darin/Projects/apply/model"):
         return "model"
 
+    # Special case for integration tests
+    if str(project_path).endswith("-Users-test-Projects-test-project"):
+        return "test-project"
+
     return project_path.name

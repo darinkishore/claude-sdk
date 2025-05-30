@@ -10,6 +10,7 @@ The Session class represents a complete Claude Code conversation, including:
 - Tool usage data and costs
 - Conversation threading (main chain and sidechains)
 - Session metadata (duration, total cost, etc.)
+- Project information (project name, path)
 
 Example:
     ```python
@@ -20,6 +21,7 @@ Example:
 
     # Access key properties
     print(f"Session ID: {session.session_id}")
+    print(f"Project: {session.project_name}")
     print(f"Total cost: ${session.total_cost:.4f}")
     print(f"Duration: {session.duration}")
     print(f"Total messages: {len(session.messages)}")
@@ -36,6 +38,7 @@ Example:
 """
 
 from datetime import timedelta
+from pathlib import Path
 
 from .models import (
     MessageRecord as _MessageRecord,
@@ -43,6 +46,7 @@ from .models import (
 from .models import (
     ParsedSession as _ParsedSession,
 )
+from .utils import extract_project_name
 
 
 class Session(_ParsedSession):
@@ -390,3 +394,64 @@ class Session(_ParsedSession):
             ```
         """
         return [msg for msg in self.messages if msg.message.role == role]
+
+    @property
+    def project_path(self) -> Path:
+        """Get project filesystem path from session cwd.
+
+        This property returns the filesystem path of the project associated with
+        this session, derived from the cwd field of the first message. This path
+        can be used to locate related files or to group sessions by project.
+
+        Returns:
+            Path: Filesystem path to the project directory
+
+        Raises:
+            ValueError: If session has no messages
+
+        Example:
+            ```python
+            session = load("conversation.jsonl")
+            print(f"Project path: {session.project_path}")
+            print(f"Project name: {session.project_name}")
+
+            # Group sessions by project
+            sessions_by_project = {}
+            for path in find_sessions():
+                session = load(path)
+                project = str(session.project_path)
+                if project not in sessions_by_project:
+                    sessions_by_project[project] = []
+                sessions_by_project[project].append(session)
+            ```
+        """
+        if not self.messages:
+            raise ValueError("Cannot determine project path from empty session")
+        return self.messages[0].cwd
+
+    @property
+    def project_name(self) -> str:
+        """Get project display name from session cwd.
+
+        This property returns the display name of the project associated with
+        this session, which is the final component of the project path. This
+        is useful for grouping sessions by project name in reports and analyses.
+
+        Returns:
+            str: Display name for the project (e.g., "apply-model")
+
+        Raises:
+            ValueError: If session has no messages
+
+        Example:
+            ```python
+            session = load("conversation.jsonl")
+            print(f"Working in project: {session.project_name}")
+
+            # Filter sessions by project name
+            sessions = [load(p) for p in find_sessions()]
+            apply_model_sessions = [s for s in sessions if s.project_name == "apply-model"]
+            print(f"Found {len(apply_model_sessions)} sessions in 'apply-model' project")
+            ```
+        """
+        return extract_project_name(self.project_path)
