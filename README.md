@@ -7,6 +7,7 @@ A clean, intuitive interface for working with Claude Code JSONL session files. D
 ## Features
 
 - **Simple API**: `session = load("conversation.jsonl")` - that's it!
+- **Project-Level Analysis**: Aggregate data across multiple sessions in a project
 - **Session Analysis**: Easily access cost, tool usage, and performance metrics
 - **Message Access**: Clean iteration through conversation messages
 - **Type Safety**: Full typing with Pydantic models and basedpyright --strict
@@ -22,7 +23,7 @@ pip install claude-sdk
 ## Quick Start
 
 ```python
-from claude_sdk import load, find_sessions
+from claude_sdk import load, find_sessions, find_projects, load_project
 
 # Load a session from a JSONL file
 session = load("conversation.jsonl")
@@ -33,25 +34,51 @@ print(f"Total cost: ${session.total_cost:.4f}")
 print(f"Tools used: {', '.join(session.tools_used)}")
 print(f"Messages: {len(session.messages)}")
 
-# Iterate through messages
-for msg in session.messages:
-    print(f"{msg.role}: {msg.text[:50]}...")  # Show message preview
-    if msg.tools:
-        print(f"  Tools: {', '.join(msg.tools)}")
-    if msg.cost:
-        print(f"  Cost: ${msg.cost:.4f}")
+# Load a complete project
+project = load_project("apply-model")  # By project name
+print(f"Project: {project.name}")
+print(f"Total sessions: {project.total_sessions}")
+print(f"Total cost: ${project.total_cost:.4f}")
+print(f"Date range: {project.first_session_date} to {project.last_session_date}")
 
-# Find all sessions in ~/.claude/projects/
-session_paths = find_sessions()
-print(f"Found {len(session_paths)} sessions")
+# Find sessions filtered by project
+sessions = find_sessions(project="apply-model")
+print(f"Found {len(sessions)} sessions in apply-model project")
+```
 
-# Process multiple sessions
-for path in session_paths[:5]:  # First 5 sessions
-    try:
-        session = load(path)
-        print(f"Session {session.session_id}: {len(session.messages)} messages, ${session.total_cost:.4f}")
-    except Exception as e:
-        print(f"Error loading {path}: {e}")
+## Project-Level Analysis
+
+The SDK now supports project-level analysis, allowing you to aggregate data across all sessions in a Claude Code project:
+
+```python
+from claude_sdk import find_projects, load_project
+
+# Discover all projects
+projects = find_projects()
+print(f"Found {len(projects)} projects")
+
+# List project names
+for i, project_path in enumerate(projects[:5]):
+    print(f"{i+1}. {project_path.name}")
+
+# Load a project by name or path
+project = load_project("apply-model")  # By name
+# OR
+project = load_project(projects[0])  # By path
+
+# Access aggregated project data
+print(f"Project: {project.name}")
+print(f"Total sessions: {project.total_sessions}")
+print(f"Total cost: ${project.total_cost:.4f}")
+print(f"Tools used: {', '.join(project.tools_used)}")
+
+# Tool usage breakdown
+for tool, count in project.tool_usage_count.items():
+    print(f"{tool}: {count} uses")
+
+# Access individual sessions
+for session in project.sessions[:5]:
+    print(f"Session {session.session_id}: ${session.total_cost:.4f}")
 ```
 
 ## Key Concepts
@@ -92,6 +119,28 @@ for msg in session.messages:
     msg.tools               # List of tools used
 ```
 
+### Project Object
+
+The `Project` class aggregates data across all sessions in a Claude Code project:
+
+```python
+project = load_project("apply-model")
+
+# Core properties
+project.name                # Human-readable project name
+project.project_path        # Full path to project directory
+project.sessions            # List of all sessions in the project
+project.total_sessions      # Number of sessions
+
+# Aggregated data
+project.total_cost          # Total cost across all sessions
+project.tools_used          # Set of all tools used
+project.tool_usage_count    # Dict mapping tools to usage counts
+project.first_session_date  # Earliest session start time
+project.last_session_date   # Latest session start time
+project.total_duration      # Time span from first to last session
+```
+
 ## Tool Usage Analysis
 
 Analyze tool patterns and costs:
@@ -113,6 +162,43 @@ for msg in session.messages:
 
 print(f"Found {len(bash_commands)} Bash commands")
 ```
+
+## API Reference
+
+### Core Functions
+
+#### `load(file_path)`
+Load a Claude Code session from a JSONL file.
+- **Args**: `file_path` - Path to the JSONL session file
+- **Returns**: `Session` object
+- **Raises**: `ParseError`, `FileNotFoundError`
+
+#### `find_sessions(base_path=None, project=None)`
+Find Claude Code session files, optionally filtered by project.
+- **Args**:
+  - `base_path` - Directory to search (defaults to ~/.claude/projects/)
+  - `project` - Project name or path to filter sessions
+- **Returns**: List of session file paths
+- **Example**:
+  ```python
+  # Find all sessions
+  all_sessions = find_sessions()
+
+  # Find sessions in specific project
+  project_sessions = find_sessions(project="apply-model")
+  ```
+
+#### `find_projects(base_path=None)`
+Find all Claude Code project directories.
+- **Args**: `base_path` - Directory to search (defaults to ~/.claude/projects/)
+- **Returns**: List of project directory paths
+
+#### `load_project(project_identifier, base_path=None)`
+Load a Claude Code project with all its sessions.
+- **Args**:
+  - `project_identifier` - Project name or full path
+  - `base_path` - Base directory (defaults to ~/.claude/projects/)
+- **Returns**: `Project` object with aggregated data
 
 ## Error Handling
 
