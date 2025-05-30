@@ -73,11 +73,19 @@ Follow these steps for a Code Review (in order)
     - **Scope**: Identified task or reason none was processed
     - **Summary**: One-paragraph recap of what was done or why blocked
     - **Next steps**: Recommended follow-up actions
-  - Ask for user confirmation
+  - **YOLO MODE CHECK**: If <$ARGUMENTS> contains "yolo" or "YOLO":
+    - Skip user confirmation and proceed directly to step 8
+  - **REGULAR MODE**: Ask for user confirmation
 
 ## 8 · Finalize task status
 
-**ONLY WHEN USER CONFIRMATION IS GIVEN**
-
 - set the Task status to **completed**
 - Update .simone/00_PROJECT_MANIFEST.md to reflect the new status
+- **TASK FILE RENAME**: If this is a sprint task (pattern T##_S##_*.md):
+  - Rename the task file from `T##_S##_*.md` to `TX##_S##_*.md`
+  - Example: `T01_S04_Core_Project_Model.md` → `TX01_S04_Core_Project_Model.md`
+- **SPRINT COMPLETION CHECK**: After renaming, check the sprint directory:
+  - If ALL task files now start with `TX` (no more `T##_S##` files):
+    - Update the sprint meta file status to `completed`
+    - Add completion timestamp to sprint meta file
+    - Log: "Sprint {sprint_id} is now complete!"
